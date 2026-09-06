@@ -1,0 +1,200 @@
+// prisma/schema.prisma
+
+datasource db {
+  provider = "postgresql"
+  //url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+// ==============================
+// USERS
+// ==============================
+model Session {
+  id                 Int       @id @default(autoincrement())
+  user_id            Int
+
+  refresh_token_hash String
+  jti                String    @unique
+
+  expires_at         DateTime
+  revoked_at         DateTime?
+
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+
+  user_agent         String?   @db.Text
+  ip_address         String?   @db.VarChar(45)
+  device_name        String?
+
+  user               User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([expires_at])
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id          Int       @id @default(autoincrement())
+  user_id     Int
+
+  token_hash  String    @unique
+
+  expires_at  DateTime
+  used_at     DateTime?
+
+  created_at  DateTime  @default(now())
+
+  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([expires_at])
+  @@map("password_reset_tokens")
+}
+
+model EmailVerificationToken {
+  id          Int       @id @default(autoincrement())
+  user_id     Int
+
+  token_hash  String    @unique
+
+  expires_at  DateTime
+  used_at     DateTime?
+
+  created_at  DateTime  @default(now())
+
+  user        User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([expires_at])
+  @@map("email_verification_tokens")
+}
+
+enum UserRole {
+  CUSTOMER
+  SELLER
+  ADMIN
+}
+model User {
+  id          Int      @id @default(autoincrement())
+  name        String?  @db.VarChar(50)
+  email       String   @unique @db.VarChar(255)
+  password    String?  @db.VarChar(255)   // ← changed from required to optional
+  is_verified Boolean  @default(false)
+  role        UserRole @default(CUSTOMER)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+  cart                       Cart?
+  orders                     Order[]
+  sessions                   Session[]
+  password_reset_tokens      PasswordResetToken[]
+  email_verification_tokens  EmailVerificationToken[]
+  oauth_accounts              OAuthAccount[]           
+  @@map("users")
+}
+model OAuthAccount {
+  id                Int      @id @default(autoincrement())
+  user_id           Int
+
+  provider          String   @db.VarChar(50)   // "google", later "github" etc.
+  provider_user_id  String   @db.VarChar(255)  // Google's `sub` claim
+
+  created_at        DateTime @default(now())
+
+  user              User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([provider, provider_user_id])
+  @@index([user_id])
+  @@map("oauth_accounts")
+}
+// ==================+============
+// PRODUCTS
+// ==============================
+model Product {
+  id          Int      @id @default(autoincrement())
+  name        String?  @db.VarChar(50)
+  price       Int?
+  stock       Int?
+  is_hidden   Boolean  @default(false)
+  created_at  DateTime @default(now())
+
+  // Relationships
+  cart_items  CartItem[]
+  order_items OrderItem[]
+
+  @@map("products")
+}
+
+// ==============================
+// CART
+// ==============================
+model Cart {
+  id          Int      @id @default(autoincrement())
+  user_id     Int      @unique
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  // Relationships
+  user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  items       CartItem[]
+
+  @@map("cart")
+}
+
+// ==============================
+// CART ITEMS
+// ==============================
+model CartItem {
+  id          Int      @id @default(autoincrement())
+  cart_id     Int
+  product_id  Int
+  quantity    Int      @default(1)
+  created_at  DateTime @default(now())
+
+  // Relationships
+  cart        Cart     @relation(fields: [cart_id], references: [id], onDelete: Cascade)
+  product     Product  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@unique([cart_id, product_id])
+  @@map("cart_items")
+}
+
+// ==============================
+// ORDERS
+// ==============================
+model Order {
+  id               Int      @id @default(autoincrement())
+  user_id          Int
+  order_date       DateTime @default(now())
+  status           String   @default("pending") @db.VarChar(20)
+  total_amount     Decimal  @db.Decimal(10, 2)
+  shipping_address String?  @db.Text
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  // Relationships
+  user             User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  items            OrderItem[]
+
+  @@map("orders")
+}
+
+// ==============================
+// ORDER ITEMS
+// ==============================
+model OrderItem {
+  id          Int      @id @default(autoincrement())
+  order_id    Int
+  product_id  Int
+  quantity    Int
+  unit_price  Decimal  @db.Decimal(10, 2)
+  total_price Decimal  @db.Decimal(10, 2)
+  created_at  DateTime @default(now())
+
+  // Relationships
+  order       Order    @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  product     Product  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
+}

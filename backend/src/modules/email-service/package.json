@@ -1,0 +1,18 @@
+{
+  "name": "email-service",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/worker.js",
+    "dev": "node --watch src/worker.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "amqp": "^0.2.7"
+  }
+}
