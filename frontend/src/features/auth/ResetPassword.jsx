@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { resetPassword } from "../../api/auth.api";
+import AuthLayout from "./AuthLayout";
+import Button from "../../components/ui/Button";
 
 const ResetPassword = () => {
   const [searchParams] = useSearchParams();
@@ -32,31 +34,50 @@ const ResetPassword = () => {
   };
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}>
-      <form
-        onSubmit={handleSubmit}
-        style={{ display: "flex", flexDirection: "column", gap: "10px", width: "280px", padding: "24px", border: "1px solid #ddd", borderRadius: "8px" }}
-      >
-        <h2 style={{ textAlign: "center", margin: "0 0 10px" }}>Reset Password</h2>
-        <input
-          type="email"
-          placeholder="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          style={{ padding: "8px" }}
-        />
-        <input
-          type="password"
-          placeholder="new password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={{ padding: "8px" }}
-        />
-        <button type="submit" style={{ padding: "8px" }}>Reset password</button>
-        {message && <p style={{ color: "green", margin: 0 }}>{message}</p>}
-        {error && <p style={{ color: "red", margin: 0 }}>{error}</p>}
+    <AuthLayout
+      title="Reset your password"
+      subtitle="Choose a new password for your account."
+      footer={
+        <>
+          Back to <Link to="/login">Log in</Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="auth-form">
+        <div className="field">
+          <label htmlFor="reset-email">Email</label>
+          <input
+            id="reset-email"
+            type="email"
+            className="input"
+            placeholder="you@email.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="reset-password">New password</label>
+          <input
+            id="reset-password"
+            type="password"
+            className="input"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </div>
+
+        {message && <p className="form-alert form-alert-success">{message}</p>}
+        {error && <p className="form-alert form-alert-error">{error}</p>}
+
+        <Button type="submit" className="auth-form__submit">
+          Reset password
+        </Button>
       </form>
-    </div>
+    </AuthLayout>
   );
 };
 

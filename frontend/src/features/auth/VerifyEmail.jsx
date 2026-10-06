@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useAuth } from "./AuthProvider";
 import { verifyEmail } from "../../api/auth.api";
+import AuthLayout from "./AuthLayout";
+import Button from "../../components/ui/Button";
 
 const VerifyEmail = () => {
   const { user } = useAuth();
@@ -23,14 +25,13 @@ const VerifyEmail = () => {
   };
 
   return (
-    <div>
-      <p>{user?.email}</p>
-      <button onClick={handleSend} disabled={sending}>
+    <AuthLayout title="Verify your email" subtitle={user?.email}>
+      <Button onClick={handleSend} disabled={sending} className="auth-form__submit">
         {sending ? "Sending..." : "Send verification email"}
-      </button>
-      {message && <p style={{ color: "green" }}>{message}</p>}
-      {error && <p style={{ color: "red" }}>{error}</p>}
-    </div>
+      </Button>
+      {message && <p className="form-alert form-alert-success">{message}</p>}
+      {error && <p className="form-alert form-alert-error">{error}</p>}
+    </AuthLayout>
   );
 };
 

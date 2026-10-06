@@ -111,19 +111,66 @@ model OAuthAccount {
 // ==================+============
 // PRODUCTS
 // ==============================
+model Category {
+  id         Int       @id @default(autoincrement())
+  name       String    @unique @db.VarChar(100)
+  created_at DateTime  @default(now())
+
+  products   Product[]
+
+  @@map("categories")
+}
+
 model Product {
   id          Int      @id @default(autoincrement())
-  name        String?  @db.VarChar(50)
-  price       Int?
-  stock       Int?
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  price       Decimal  @db.Decimal(10, 2)
+  stock       Int      @default(0)
   is_hidden   Boolean  @default(false)
   created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
 
-  // Relationships
+  category_id Int
+  category    Category  @relation(fields: [category_id], references: [id])
+
+  reviews     Review[]
+  images      ProductImage[]
   cart_items  CartItem[]
   order_items OrderItem[]
 
+  @@index([category_id])
+  @@index([name])
+  @@index([price])
+  @@index([created_at])
   @@map("products")
+}
+model ProductImage {
+  id            Int      @id @default(autoincrement())
+  product_id    Int
+  key           String
+  original_name String?
+  mime_type     String?
+  size          Int?
+  is_primary    Boolean  @default(false)
+
+  created_at    DateTime @default(now())
+
+  product       Product  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  @@index([product_id])
+  @@map("product_images")
+}
+model Review {
+  id         Int      @id @default(autoincrement())
+  product_id Int
+  rating     Int
+  comment    String?  @db.Text
+  created_at DateTime @default(now())
+
+  product    Product  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@index([product_id])
+  @@map("reviews")
 }
 
 // ==============================

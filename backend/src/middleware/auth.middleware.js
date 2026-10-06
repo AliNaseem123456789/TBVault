@@ -1,6 +1,7 @@
 import { verifyAccessToken } from "../utils/jwt.helpers.js";
 export const authenticate=async(req,res,next)=>{
    const authHeader=req.headers["authorization"];
+   console.log("AUTH HEADER:", req.headers["authorization"]);
    
    if(!authHeader || !authHeader.startsWith("Bearer")){
     return res.status(401).json({message:"Not authenticated"})

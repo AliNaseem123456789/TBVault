@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
+import "./AuthLayout.css";
 
 const OAuthSuccess = () => {
   const [searchParams] = useSearchParams();
@@ -21,7 +22,12 @@ const OAuthSuccess = () => {
     }
   }, []);
 
-  return <p>Signing you in...</p>;
+  return (
+    <div className="status-shell">
+      <div className="spinner" />
+      <p>Signing you in...</p>
+    </div>
+  );
 };
 
 export default OAuthSuccess;

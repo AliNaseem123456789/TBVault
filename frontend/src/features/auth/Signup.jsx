@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useAuth } from "./AuthProvider";
 import { useNavigate, Link } from "react-router-dom";
+import AuthLayout from "./AuthLayout";
+import Button from "../../components/ui/Button";
 
 const Signup = () => {
   const [name, setName] = useState("");
@@ -27,75 +29,82 @@ const Signup = () => {
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        minHeight: "100vh",
-      }}
+    <AuthLayout
+      title="Create your account"
+      subtitle="Join TBVault for faster checkout and order tracking."
+      footer={
+        <>
+          Already have an account? <Link to="/login">Log in</Link>
+        </>
+      }
     >
-      <form
-        onSubmit={handleSubmit}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "10px",
-          width: "280px",
-          padding: "24px",
-          border: "1px solid #ddd",
-          borderRadius: "8px",
-        }}
-      >
-        <h2 style={{ textAlign: "center", margin: "0 0 10px" }}>Sign Up</h2>
+      <form onSubmit={handleSubmit} className="auth-form">
+        <div className="field">
+          <label htmlFor="signup-name">Name</label>
+          <input
+            id="signup-name"
+            className="input"
+            placeholder="Your name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
+        </div>
 
-        <input
-          placeholder="name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          style={{ padding: "8px" }}
-        />
-        <input
-          type="email"
-          placeholder="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          style={{ padding: "8px" }}
-        />
-        <input
-          type="password"
-          placeholder="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={{ padding: "8px" }}
-        />
-        <input
-          type="password"
-          placeholder="confirm password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          style={{ padding: "8px" }}
-        />
+        <div className="field">
+          <label htmlFor="signup-email">Email</label>
+          <input
+            id="signup-email"
+            type="email"
+            className="input"
+            placeholder="you@email.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+        </div>
 
-        <button type="submit" style={{ padding: "8px" }}>
+        <div className="field">
+          <label htmlFor="signup-password">Password</label>
+          <input
+            id="signup-password"
+            type="password"
+            className="input"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="signup-confirm">Confirm password</label>
+          <input
+            id="signup-confirm"
+            type="password"
+            className="input"
+            placeholder="••••••••"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+          />
+        </div>
+
+        {error && <p className="form-alert form-alert-error">{error}</p>}
+
+        <Button type="submit" className="auth-form__submit">
           Sign up
-        </button>
-
-        <button
-          type="button"
-          onClick={handleGoogleLogin}
-          style={{ padding: "8px" }}
-        >
-          Sign up with Google
-        </button>
-
-        {error && <p style={{ color: "red", margin: 0 }}>{error}</p>}
-
-        <p style={{ textAlign: "center", margin: 0, fontSize: "14px" }}>
-          Already have an account? <Link to="/login">Login</Link>
-        </p>
+        </Button>
       </form>
-    </div>
+
+      <div className="auth-divider">
+        <span>or</span>
+      </div>
+
+      <button type="button" className="btn btn-ghost auth-form__submit" onClick={handleGoogleLogin}>
+        <span className="google-badge">G</span> Sign up with Google
+      </button>
+    </AuthLayout>
   );
 };
 

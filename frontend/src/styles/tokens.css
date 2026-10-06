@@ -1,0 +1,122 @@
+/**
+ * ============================================================
+ *  TBVault Design Tokens — SINGLE SOURCE OF TRUTH FOR STYLE
+ * ============================================================
+ * Every color, font size, spacing value, radius, shadow and
+ * animation timing used anywhere in the app should come from a
+ * variable in this file. Never hardcode a hex code, a raw px
+ * value, or a transition duration inside a component's CSS —
+ * reference a token instead (e.g. `color: var(--color-accent)`).
+ *
+ * Changing the look of the whole site (a rebrand, a new accent
+ * color, a bigger base font) means editing values in THIS file
+ * only — every component already points at these variables.
+ *
+ * Full usage guide: /STYLE_GUIDE.md at the project root.
+ * ============================================================
+ */
+
+:root {
+  /* ---------- Color: Base / surfaces ---------- */
+  --color-bg:             #FAF8F4; /* page background — warm off-white */
+  --color-surface:        #FFFFFF; /* cards, nav, form fields */
+  --color-surface-alt:    #F1EEE7; /* subtle section / hover backgrounds */
+  --color-border:         #E7E2D6;
+  --color-border-strong:  #D8D2C2;
+
+  /* ---------- Color: Ink (text) ---------- */
+  --color-ink:            #15140F; /* primary text, headings */
+  --color-ink-muted:      #635F55; /* secondary / supporting text */
+  --color-ink-faint:      #A6A197; /* placeholders, disabled text */
+
+  /* ---------- Color: Brand ---------- */
+  --color-accent:         #FF5A2E; /* primary CTA / brand accent (vermilion) */
+  --color-accent-hover:   #E44A20;
+  --color-accent-soft:    #FFE7DB; /* tints — badges, hover backgrounds */
+  --color-accent-ink:     #FFFFFF; /* text/icons placed on the accent color */
+
+  --color-secondary:      #14532D; /* deep green — contrast sections/banners */
+  --color-secondary-soft: #E3EEE4;
+
+  /* ---------- Color: Semantic ---------- */
+  --color-success: #1E7A46;
+  --color-warning: #B7791F;
+  --color-danger:  #C23B3B;
+  --color-star:    #F5A524; /* rating stars */
+
+  /* ---------- Typography ---------- */
+  --font-body:    'Manrope', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-display: 'Manrope', 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+  --text-xs:   0.75rem;   /* 12px — fine print, labels */
+  --text-sm:   0.875rem;  /* 14px — captions, nav links */
+  --text-base: 1rem;      /* 16px — body copy */
+  --text-md:   1.125rem;  /* 18px — lead paragraphs, card titles */
+  --text-lg:   1.25rem;   /* 20px — small headings */
+  --text-xl:   1.5rem;    /* 24px — section sub-headings */
+  --text-2xl:  1.875rem;  /* 30px — section headings */
+  --text-3xl:  2.25rem;   /* 36px — page headings */
+  --text-4xl:  3rem;      /* 48px — large display */
+  --text-hero: clamp(2.25rem, 1.4rem + 3.5vw, 4.25rem); /* hero headline, fluid */
+
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+  --weight-extra:    800;
+
+  --leading-tight:  1.1;  /* headings */
+  --leading-snug:   1.3;  /* sub-headings, quotes */
+  --leading-normal: 1.6;  /* body copy */
+
+  /* ---------- Spacing (4px base scale) — use for margin/padding/gap ---------- */
+  --space-1:  0.25rem;  /* 4px  */
+  --space-2:  0.5rem;   /* 8px  */
+  --space-3:  0.75rem;  /* 12px */
+  --space-4:  1rem;     /* 16px */
+  --space-5:  1.5rem;   /* 24px */
+  --space-6:  2rem;     /* 32px */
+  --space-7:  2.5rem;   /* 40px */
+  --space-8:  3rem;     /* 48px */
+  --space-9:  4rem;     /* 64px */
+  --space-10: 5rem;     /* 80px */
+  --space-11: 6.5rem;   /* 104px */
+
+  /* ---------- Radius ---------- */
+  --radius-sm:   8px;   /* inputs, small chips */
+  --radius-md:   14px;  /* buttons (non-pill), small cards */
+  --radius-lg:   22px;  /* cards, product art */
+  --radius-xl:   32px;  /* hero art, feature panels */
+  --radius-full: 999px; /* pills, avatars, icon buttons */
+
+  /* ---------- Shadow ---------- */
+  --shadow-sm:     0 1px 2px rgba(21, 20, 15, 0.06);
+  --shadow-md:     0 8px 24px rgba(21, 20, 15, 0.08);
+  --shadow-lg:     0 20px 48px rgba(21, 20, 15, 0.14);
+  --shadow-accent: 0 12px 28px rgba(255, 90, 46, 0.28);
+
+  /* ---------- Motion ---------- */
+  --ease-out:      cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out:   cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 150ms; /* hovers */
+  --duration-base: 250ms; /* default transitions */
+  --duration-slow: 500ms; /* scroll-reveal entrances */
+
+  /* ---------- Layout ---------- */
+  --container-max: 1240px;
+  --container-pad: clamp(1.25rem, 4vw, 3rem);
+  --nav-height:    76px;
+
+  /*
+   * ---------- Breakpoints (reference only) ----------
+   * Plain CSS can't read custom properties inside @media queries,
+   * so these are NOT usable as var(--bp-md) — they're documented
+   * here so every component's media queries stay consistent.
+   * Always write @media queries against these exact numbers:
+   *   xs: 0–479px    (default / mobile)
+   *   sm: 480–767px
+   *   md: 768–1023px
+   *   lg: 1024–1279px
+   *   xl: 1280px+
+   */
+}

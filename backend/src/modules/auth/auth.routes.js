@@ -11,7 +11,8 @@ import {
     verifyEmail,
     confirmEmail,
     googleAuth,
-    googleCallback
+    googleCallback,
+    me
 } from "./auth.controller.js"
 import { authenticate,authorize } from "../../middleware/auth.middleware.js"
 import { loginRateLimiter } from "../../middleware/rateLimiter.middleware.js"
@@ -28,6 +29,7 @@ router.post("/reset-password",resetPassword)
 router.post("/verify-email",authenticate,verifyEmail)
 router.post("/confirm-email",confirmEmail)
 router.post("/refresh",refresh)
+router.post("/me",me)
 router.get("/google", googleAuth)
 router.get("/google/callback", googleCallback)
 export default router

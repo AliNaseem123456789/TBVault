@@ -1,0 +1,478 @@
+import prisma from "../../config/db.js"
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import storage from "../../config/storage.js";
+import path from "path"
+import crypto from"crypto";
+export const createProducts=async(req,res)=>{
+    const {name,description,price,stock,is_hidden,category_id}=req.body;
+    // if(!Number.isInteger(price)|| !Number.isInteger(stock)||typeof(is_hidden)==="boolean"){
+    //     return res.status(400)
+    // }
+    try{
+        const product=await prisma.product.create({data:{
+            name:name,
+            description:description,
+            price:price,
+            stock:stock,
+            is_hidden:is_hidden,
+            category_id:category_id,
+        }})
+        return res.status(201).json({message:"product Created",data:{product}})
+        
+    }catch(err){
+        if(err.code=="P2002"){
+            return res.status(409).json({message:"Product Already Exists"})
+        }
+    console.error(err);
+    return res.status(500).json({ message: "Database Error" });
+    }
+}
+// GET /products?
+// search=phone&categoryId=2&minPrice=100&maxPrice=1000&inStock=true&sortBy=price
+// &order=asc&page=2&limit=10
+export const getProductsByCategory = async (req, res) => {
+  const { search, sortBy, order, inStock } = req.query;
+
+  let categoryId;
+  let minPrice;
+  let maxPrice;
+  
+  const page = req.query.page !== undefined? Number(req.query.page): 1;
+  const limit = req.query.limit !== undefined? Number(req.query.limit): 10;
+  if (!Number.isInteger(page) || page < 1) {
+    return res.status(400).json({message: "invalid page"});
+  }
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    return res.status(400).json({message: "invalid limit"});
+  }
+  const offset = (page - 1) * limit;
+  // Category validation
+  if (req.query.categoryId !== undefined) {
+    categoryId = Number(req.query.categoryId);
+
+    if (!Number.isInteger(categoryId) || categoryId < 1) {
+      return res.status(400).json({message: "invalid Category Id"});
+    }
+  }
+  // Price validation
+  if (req.query.minPrice !== undefined) {
+    minPrice = Number(req.query.minPrice);
+
+    if (!Number.isFinite(minPrice) || minPrice < 0) {
+      return res.status(400).json({message: "invalid minPrice"});
+    }
+  }
+
+  if (req.query.maxPrice !== undefined) {
+    maxPrice = Number(req.query.maxPrice);
+
+    if (!Number.isFinite(maxPrice) || maxPrice < 0) {
+      return res.status(400).json({message: "invalid maxPrice"});
+    }
+  }
+
+  if (
+    minPrice !== undefined &&
+    maxPrice !== undefined &&
+    minPrice > maxPrice
+  ) {
+    return res.status(400).json({message: "minPrice cannot be greater than maxPrice"});
+  }
+  // Stock validation
+  let stockFilter;
+  if (inStock !== undefined) {
+    if (inStock === "true") {
+      stockFilter = {
+        gt: 0
+      };
+    } else if (inStock === "false") {
+      stockFilter = {
+        equals: 0
+      };
+    } else {
+      return res.status(400).json({message: "inStock must be true or false"});
+    }
+  }
+  // Sorting validation
+  const allowedFields = ["name","price","stock","created_at"];
+  const allowedOrders = ["asc","desc"];
+
+  if (sortBy !== undefined) {
+    if (!allowedFields.includes(sortBy)) {
+      return res.status(400).json({message: "Invalid sort fields"});
+    }
+  }
+
+  if (order !== undefined) {
+    if (!allowedOrders.includes(order)) {
+      return res.status(400).json({message: "Invalid sort order"});
+    }
+  }
+  // Search validation
+  if (search !== undefined) {
+    if (search.trim().length === 0) {
+      return res.status(400).json({message: "search cannot be empty"});
+    }
+  }
+  // Build WHERE dynamically
+  const where = {};
+ 
+  if (search) {
+    where.OR = [
+      {
+        name: {
+          contains: search,
+          mode: "insensitive"
+        }
+      },
+      {
+        description: {
+          contains: search,
+          mode: "insensitive"
+        }
+      }
+    ];
+  }
+
+  if (categoryId !== undefined) {
+    where.category_id = categoryId;
+  }
+
+  if (minPrice !== undefined || maxPrice !== undefined) {
+    where.price = {};
+
+    if (minPrice !== undefined) {
+      where.price.gte = minPrice;
+    }
+
+    if (maxPrice !== undefined) {
+      where.price.lte = maxPrice;
+    }
+  }
+
+  if (stockFilter !== undefined) {
+    where.stock = stockFilter;
+  }
+  // Sorting
+  const finalSortBy = sortBy || "created_at";
+  const finalOrder = order || "desc";
+  // Database query
+  try {
+    const [products, totalItems] = await Promise.all([
+      prisma.product.findMany({
+        where,
+        include: {
+          category: {
+            select: {
+              id: true,
+              name: true
+            }
+          },
+        images: {
+            orderBy: [
+            { is_primary: "desc" },     
+            { created_at: "asc" },       
+                 ],
+                take: 2,}
+        },
+        orderBy: {
+          [finalSortBy]: finalOrder
+        },
+
+        skip: offset,
+        take: limit
+      }),
+
+      prisma.product.count({
+        where
+      })
+    ]);
+
+    const totalPages = Math.ceil(totalItems / limit);
+
+    return res.status(200).json({
+      message: "Products Found",
+
+      data: {
+        products
+      },
+
+      metaData: {
+        totalPages: totalPages,
+        currentPage: page,
+        hasNext: totalPages > page,
+        hasPrev: page > 1,
+        itemsPerPage: limit,
+        totalItems: totalItems
+      }
+    });
+
+  } catch (err) {
+    console.error(err);
+
+    return res.status(500).json({
+      message: "Database Error"
+    });
+  }
+};
+
+export const getProductsById=async(req,res)=>{
+    const id=Number(req.params.id)
+    try{
+        const product=await prisma.product.findUnique(
+            {
+                where:{id:id},
+                include:{images:{orderBy:{is_primary:"desc"}}}
+            }
+        )
+        if (!product) {
+         return res.status(404).json({ message: "Product not found" });
+            }
+        return res.status(200).json({message:"product Created",data:{product}})
+    }catch(err){
+    return res.status(500).json({message:"Database Error"})
+    }
+}
+export const updateProductsById=async(req,res)=>{
+    const id=Number(req.params.id)
+    const {name,description,price,stock,is_hidden,category_id}=req.body;
+     try{
+        const product=await prisma.product.update({where:{id:id},data:{
+            name:name,
+            description:description,
+            price:price,
+            stock:stock,
+            is_hidden:is_hidden,
+            category_id:category_id}})
+        return res.status(200).json({message:"product found",data:{product}})
+    }catch(err){
+        if(err.code==="P2025"){
+            return res.status(404).json({message:"Product doesnt Exist"})
+        }
+    return res.status(500).json({message:"Database Error"})
+    }
+}
+
+export const deleteProducts=async(req,res)=>{
+    const id=Number(req.params.id)
+     try{
+        await prisma.product.delete({where:{id:id}})
+        return res.status(204).send()
+    }catch(err){
+        if(err.code==="P2025"){
+            return res.status(404).json({message:"Product doesnt Exist"})
+        }
+    return res.status(500).json({message:"Database Error"})
+    }
+}
+export const productUpload = async (req, res) => {
+  const productId = Number(req.params.productId);
+
+  try {
+    // Validate product ID
+    if (!Number.isInteger(productId) || productId < 1) {
+      return res.status(400).json({message: "Invalid product id"});
+    }
+    // Check product exists
+    const exists = await prisma.product.findUnique({
+      where: {
+        id: productId
+      }
+    });
+    if (!exists) {
+      return res.status(404).json({message: "Product doesn't exist"});
+    }
+    // Check files
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({message: "At least one image is required"});
+    }
+
+    // Convert primaryIndex from string to number
+    const primaryIndex = req.body.primaryIndex !== undefined
+      ? Number(req.body.primaryIndex)
+      : undefined;
+
+    // Validate primaryIndex
+if (primaryIndex !== undefined &&(!Number.isInteger(primaryIndex) ||primaryIndex < 0 ||primaryIndex >= req.files.length)) 
+    {
+      return res.status(400).json({message: "Invalid primaryIndex"});
+    }
+
+    // Check existing primary image
+    const existingPrimary = await prisma.productImage.findFirst({
+      where: {
+        product_id: productId,
+        is_primary: true
+      }
+    });
+
+    // Decide which uploaded image becomes primary
+    let selectedIndex;
+
+    if (primaryIndex !== undefined) {
+      selectedIndex = primaryIndex;
+    } else if (!existingPrimary) {
+      selectedIndex = 0;
+    } else {
+      selectedIndex = undefined;
+    }
+
+    // Remove old primary if a new one is selected
+    if (selectedIndex !== undefined) {
+      await prisma.productImage.updateMany({
+        where: {
+          product_id: productId,
+          is_primary: true
+        },
+        data: {
+          is_primary: false
+        }
+      });
+    }
+
+    // Upload images to MinIO
+    const uploaded = await Promise.all(
+      req.files.map(async (file, index) => {
+        const extension = path.extname(file.originalname);
+
+        const filename = `${crypto.randomUUID()}${extension}`;
+
+        const key = `products/${productId}/${filename}`;
+
+        await storage.send(
+          new PutObjectCommand({
+            Bucket: "tbvault",
+            Key: key,
+            Body: file.buffer,
+            ContentType: file.mimetype
+          })
+        );
+
+        return {
+          product_id: productId,
+          key: key,
+          original_name: file.originalname,
+          mime_type: file.mimetype,
+          size: file.size,
+
+          // Selected image becomes primary
+          is_primary: selectedIndex === index
+        };
+      })
+    );
+
+    // Save image metadata in database
+    await prisma.productImage.createMany({
+      data: uploaded
+    });
+
+    return res.status(201).json({
+      message: "Images uploaded",
+      count: uploaded.length,
+
+      data: uploaded.map(image => ({
+        key: image.key,
+        original_name: image.original_name,
+        size: image.size,
+        is_primary: image.is_primary
+      }))
+    });
+
+  } catch (err) {
+    console.error(err);
+
+    return res.status(500).json({
+      message: "Upload failed"
+    });
+  }
+};
+// export const productUpload=async(req,res)=>{
+//     const {productId}=req.params;
+//     try{
+//         const exists=await prisma.product.findUnique({where:{id:Number(productId)}})
+//         if(!exists){
+//             return res.status(404).json({message:"product doesnt exits"})
+//         }
+//         if(!req.file){
+//             return res.status(400).json({message:"Image is required"})
+//         }
+        
+//         const extension=path.extname(req.file.originalname)
+//         const filename=`${crypto.randomUUID()}${extension}`
+//         const key=`products/${productId}/${filename}`
+//         await storage.send(new PutObjectCommand({
+//             Bucket:"tbvault",
+//             Key:key,
+//             Body:req.file.buffer,
+//             contentType:req.file.mimetype
+//         }))
+//         await prisma.productImage.create({data:{
+//             product_id:Number(productId),
+//             key:key,
+//             original_name:req.file.originalname,
+//             mime_type:req.file.mimetype,
+//             size:req.file.size
+
+//         }})
+//         return res.status(200).json({message:"",
+//             filename:req.file.originalname,
+//             type:req.file.mimetype,
+//             size:req.file.size
+//         })
+//     }catch(err){
+//         console.log(err)
+//         return res.status(500).json({message:"upload failed"})
+//     }
+// }
+
+// model Product {
+//   id          Int       @id @default(autoincrement())
+//   name        String    @db.VarChar(100)
+//   description String?   @db.Text
+//   price       Decimal   @db.Decimal(10, 2)
+//   stock       Int       @default(0)
+//   is_hidden   Boolean   @default(false)
+//   created_at  DateTime  @default(now())
+//   updated_at  DateTime  @updatedAt
+
+//   category_id Int
+//   category    Category  @relation(fields: [category_id], references: [id])
+
+//   reviews     Review[]
+//   cart_items  CartItem[]
+//   order_items OrderItem[]
+
+//   @@index([category_id])
+//   @@index([name])
+//   @@index([price])
+//   @@index([created_at])
+//   @@map("products")
+// }
+
+// model Category {
+//   id         Int       @id @default(autoincrement())
+//   name       String    @unique @db.VarChar(100)
+//   created_at DateTime  @default(now())
+
+//   products   Product[]
+
+//   @@map("categories")
+// }
+
+
+// model ProductImage {
+//   id            Int      @id @default(autoincrement())
+//   product_id    Int
+//   key           String
+//   original_name String?
+//   mime_type     String?
+//   size          Int?
+//   is_primary    Boolean  @default(false)
+
+//   created_at    DateTime @default(now())
+
+//   product       Product  @relation(
+//     fields: [product_id],
+//     references: [id],
+//     onDelete: Cascade
+//   )

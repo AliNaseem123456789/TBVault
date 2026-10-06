@@ -1,0 +1,152 @@
+# TBVault Frontend — Architecture & Page Guide
+
+How the frontend is organized, and the exact steps to add a new page so it
+stays consistent with everything already built. Pair this with
+`STYLE_GUIDE.md` (the visual rules) — this file is about structure and
+wiring.
+
+Stack: React 19 + Vite, `react-router-dom` v7 for routing, `axios` for API
+calls. No CSS framework — plain CSS files built on the design tokens in
+`src/styles/tokens.css`. No component library — everything in
+`src/components/ui/` is hand-built and small on purpose.
+
+## 1. Folder map
+
+```
+src/
+  api/                  Backend calls. One file per resource (auth.api.js
+                         today). apiClient.js holds the shared axios
+                         instance (base URL, interceptors, auth headers).
+
+  components/
+    ui/                 Small, reusable, page-agnostic pieces:
+                         Button, Icon, ProductCard, Marquee, Reveal.
+                         These know nothing about any specific page.
+    layout/             Navbar, Footer, Layout (wraps public pages with
+                         both). Also page-agnostic, but bigger/structural.
+
+  features/auth/        Everything to do with authentication: Login,
+                         Signup, Profile, password reset/verify flows,
+                         AuthProvider (the auth context), ProtectedRoute.
+                         This "feature folder" pattern predates this
+                         change — keep auth-related screens here.
+
+  pages/                Public storefront pages. One folder per page.
+    Landing/
+      Landing.jsx        Composes the page from sections/
+      Landing.css         Page-specific layout only
+      sections/           One component per section (Hero, Categories, ...)
+                           plus placeholderData.js for mock content
+
+  styles/
+    tokens.css           Design tokens — see STYLE_GUIDE.md
+    global.css            Reset, base tags, shared utility classes
+
+  App.jsx                Route table
+  main.jsx                Entry point (mounts App, imports index.css)
+  index.css               Just `@import './styles/global.css'`
+```
+
+**Where does a new screen go?**
+- Related to sign-in/account/password → `src/features/auth/` (existing
+  pattern, keep using it).
+- A public storefront screen (shop, product, cart, categories, about...) →
+  new folder under `src/pages/`.
+
+## 2. How pages connect — the Layout pattern
+
+`src/components/layout/Layout.jsx` renders the announcement marquee, the
+`Navbar`, an `<Outlet />` (React Router's placeholder for the matched child
+route), and the `Footer`. In `App.jsx`, every public page is nested inside
+one `<Route element={<Layout />}>` block:
+
+```jsx
+<Route element={<Layout />}>
+  <Route path="/" element={<Landing />} />
+  {/* add new public pages here, as siblings of Landing */}
+</Route>
+```
+
+Anything inside that block automatically gets the marquee + nav + footer —
+**a page component should never import Navbar or Footer itself.** Auth
+screens (`/login`, `/sign-up`, etc.) intentionally sit outside that block
+since they're full-screen forms without site chrome, matching how they
+were already built.
+
+The catch-all route (`path="*"`) redirects unknown URLs to `/` (the
+homepage) rather than forcing everyone to `/login` — appropriate for a
+public storefront where most visitors aren't signed in.
+
+## 3. Adding a new page — step by step
+
+Example: adding a `/shop` page.
+
+1. **Create the folder:** `src/pages/Shop/`.
+2. **Build it:** `Shop.jsx` + `Shop.css`. Compose it from:
+   - Shared UI pieces (`Button`, `Icon`, `ProductCard`, `Marquee`) from
+     `src/components/ui/`.
+   - Utility classes from `global.css` (`.container`, `.section`, `.card`,
+     `.badge`, `.section-heading`) instead of writing new ones.
+   - Design tokens from `tokens.css` for anything page-specific
+     (`var(--color-accent)`, `var(--space-6)`, etc.) — never a raw value.
+3. **If the page has several large, distinct sections** (like Landing
+   does), mirror that pattern: a `sections/` subfolder with one component
+   per section, composed together in `Shop.jsx`. If it's a simple page,
+   one file is fine.
+4. **Animate section entrances** by wrapping each section (or each grid
+   item, for a staggered effect) in `<Reveal>` — see STYLE_GUIDE.md § 5.
+5. **Register the route** in `App.jsx`, inside the existing `<Layout />`
+   block:
+   ```jsx
+   <Route element={<Layout />}>
+     <Route path="/" element={<Landing />} />
+     <Route path="/shop" element={<Shop />} />
+   </Route>
+   ```
+6. **Link to it** — add an entry to `NAV_LINKS` in
+   `src/components/layout/Navbar.jsx` and/or a link in
+   `src/components/layout/Footer.jsx` if it should be discoverable from
+   navigation.
+
+## 4. Wiring up real data
+
+Placeholder content (e.g. `src/pages/Landing/sections/placeholderData.js`)
+stands in for a backend that doesn't have those endpoints yet. When a real
+endpoint exists, follow the existing `auth` pattern instead of fetching
+ad-hoc:
+
+1. Add a file in `src/api/`, e.g. `products.api.js`, that uses the shared
+   `apiClient` from `src/api/apiClient.js` — mirror the shape of
+   `src/api/auth.api.js`.
+2. Call it from the page with `useState` + `useEffect` (or a small custom
+   hook if several pages need the same data), and pass the result into
+   the same presentational components (`ProductCard`, etc.) that
+   currently receive placeholder data — the components themselves don't
+   need to change.
+3. Delete the corresponding placeholder export once it's replaced.
+
+## 5. Naming & file conventions
+
+- Component files: `PascalCase.jsx`, with a co-located `PascalCase.css`
+  when the component needs its own styles.
+- CSS classes: lowercase, hyphenated, prefixed with the component name in
+  BEM-ish form — `.product-card`, `.product-card__price`,
+  `.product-card__price--old`. This avoids collisions since there's no
+  CSS Modules/scoping in this project.
+- One `.css` file per component or per page — don't split one component's
+  styles across multiple files, and don't put unrelated components' styles
+  in the same file.
+- Reusable, page-agnostic pieces go in `components/ui` or
+  `components/layout`. Anything specific to one page's layout stays in
+  that page's own folder.
+
+## 6. Before you consider a page "done"
+
+- Every color/spacing/radius/font-size traces back to a token — no raw
+  hex codes or magic pixel values.
+- Layout checked at ≥1024px, ~768px, and ~375px widths.
+- New sections wrapped in `<Reveal>` for a consistent entrance animation.
+- Route added in `App.jsx`; nav/footer links added if the page should be
+  discoverable.
+- Every icon-only button has an `aria-label`.
+- `npm run lint` passes.

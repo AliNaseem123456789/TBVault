@@ -1,5 +1,8 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { forgotPassword } from "../../api/auth.api";
+import AuthLayout from "./AuthLayout";
+import Button from "../../components/ui/Button";
 
 const ForgotPassword = () => {
   const [email, setEmail] = useState("");
@@ -19,24 +22,37 @@ const ForgotPassword = () => {
   };
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}>
-      <form
-        onSubmit={handleSubmit}
-        style={{ display: "flex", flexDirection: "column", gap: "10px", width: "280px", padding: "24px", border: "1px solid #ddd", borderRadius: "8px" }}
-      >
-        <h2 style={{ textAlign: "center", margin: "0 0 10px" }}>Forgot Password</h2>
-        <input
-          type="email"
-          placeholder="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          style={{ padding: "8px" }}
-        />
-        <button type="submit" style={{ padding: "8px" }}>Send reset link</button>
-        {message && <p style={{ color: "green", margin: 0 }}>{message}</p>}
-        {error && <p style={{ color: "red", margin: 0 }}>{error}</p>}
+    <AuthLayout
+      title="Forgot your password?"
+      subtitle="Enter your email and we'll send you a reset link."
+      footer={
+        <>
+          Remembered it? <Link to="/login">Log in</Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} className="auth-form">
+        <div className="field">
+          <label htmlFor="forgot-email">Email</label>
+          <input
+            id="forgot-email"
+            type="email"
+            className="input"
+            placeholder="you@email.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+        </div>
+
+        {message && <p className="form-alert form-alert-success">{message}</p>}
+        {error && <p className="form-alert form-alert-error">{error}</p>}
+
+        <Button type="submit" className="auth-form__submit">
+          Send reset link
+        </Button>
       </form>
-    </div>
+    </AuthLayout>
   );
 };
 

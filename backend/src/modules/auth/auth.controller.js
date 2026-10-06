@@ -277,8 +277,8 @@ export const verifyEmail = async (req, res) => {
     });
 
     const rawToken = emailVerifyBytes.toString("hex");
-    const verifyLink = `${process.env.FRONTEND_URL}/verify-email?token=${rawToken}`;
-
+    // const verifyLink = `${process.env.FRONTEND_URL}/verify-email?token=${rawToken}`;
+    const verifyLink = `${process.env.FRONTEND_URL}/confirm-email?token=${rawToken}`;
     publishAuthEvents(AUTH_EVENTS.EMAIL_VERIFICATION_REQUESTED, {
       userId: user.id,
       email: user.email,     
@@ -317,8 +317,8 @@ export const confirmEmail = async (req, res) => {
     await prisma.$transaction([
       prisma.user.update({
         where: { id: tokenRecord.user_id },
-        data: { email_verified: true }, // add this column to User if it isn't there yet
-      }),
+        data: { is_verified: true },
+            }),
       prisma.emailVerificationToken.update({
         where: { id: tokenRecord.id },
         data: { used_at: new Date() },

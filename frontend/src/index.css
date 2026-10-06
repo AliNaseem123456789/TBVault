@@ -1,0 +1,4 @@
+/* Entry stylesheet — imported once from main.jsx.
+   Keep this file to imports only; put real rules in ./styles/global.css
+   or in a component/page's own co-located .css file. */
+@import './styles/global.css';

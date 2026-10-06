@@ -60,7 +60,20 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider
-      value={{ accessToken, user, isAuthenticated: !!accessToken, login, signup, logout, setToken }}
+      value={{
+        accessToken,
+        user,
+        isAuthenticated: !!accessToken,
+        login,
+        signup,
+        logout,
+        setToken,
+        // Re-fetches /auth/me — call this whenever something outside the
+        // normal login/signup flow can change the user record (e.g. after
+        // confirming an email link, or whenever a page like Profile wants
+        // to make sure it isn't showing stale is_verified state).
+        refreshUser: fetchUser,
+      }}
     >
       {children}
     </AuthContext.Provider>

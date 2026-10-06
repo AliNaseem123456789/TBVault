@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useAuth } from "./AuthProvider";
 import { useNavigate, Link } from "react-router-dom";
+import AuthLayout from "./AuthLayout";
+import Button from "../../components/ui/Button";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -28,66 +30,62 @@ const Login = () => {
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        minHeight: "100vh",
-      }}
+    <AuthLayout
+      title="Welcome back"
+      subtitle="Log in to pick up your cart and orders."
+      footer={
+        <>
+          Don't have an account? <Link to="/sign-up">Sign up</Link>
+        </>
+      }
     >
-      <form
-        onSubmit={handleSubmit}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "10px",
-          width: "280px",
-          padding: "24px",
-          border: "1px solid #ddd",
-          borderRadius: "8px",
-        }}
-      >
-        <h2 style={{ textAlign: "center", margin: "0 0 10px" }}>Login</h2>
-
-        <input
-          type="email"
-          placeholder="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          style={{ padding: "8px" }}
-        />
-        <input
-          type="password"
-          placeholder="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={{ padding: "8px" }}
-        />
-
-        <div style={{ textAlign: "right", fontSize: "13px" }}>
-          <Link to="/forgot-password">Forgot password?</Link>
+      <form onSubmit={handleSubmit} className="auth-form">
+        <div className="field">
+          <label htmlFor="login-email">Email</label>
+          <input
+            id="login-email"
+            type="email"
+            className="input"
+            placeholder="you@email.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
         </div>
 
-        <button type="submit" style={{ padding: "8px" }}>
-          Login
-        </button>
+        <div className="field">
+          <div className="field__row">
+            <label htmlFor="login-password">Password</label>
+            <Link to="/forgot-password" className="auth-form__link">
+              Forgot password?
+            </Link>
+          </div>
+          <input
+            id="login-password"
+            type="password"
+            className="input"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </div>
 
-        <button
-          type="button"
-          onClick={handleGoogleLogin}
-          style={{ padding: "8px" }}
-        >
-          Login with Google
-        </button>
+        {error && <p className="form-alert form-alert-error">{error}</p>}
 
-        {error && <p style={{ color: "red", margin: 0 }}>{error}</p>}
-
-        <p style={{ textAlign: "center", margin: 0, fontSize: "14px" }}>
-          Don't have an account? <Link to="/sign-up">Sign up</Link>
-        </p>
+        <Button type="submit" className="auth-form__submit">
+          Log in
+        </Button>
       </form>
-    </div>
+
+      <div className="auth-divider">
+        <span>or</span>
+      </div>
+
+      <button type="button" className="btn btn-ghost auth-form__submit" onClick={handleGoogleLogin}>
+        <span className="google-badge">G</span> Continue with Google
+      </button>
+    </AuthLayout>
   );
 };
 
