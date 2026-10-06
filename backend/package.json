@@ -5,7 +5,10 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "start": "node server.js",
+    "seed": "prisma db seed",
+    "worker": "npm --prefix src/modules/email-service run dev"
   },
   "keywords": [],
   "author": "",

@@ -13,8 +13,6 @@ export async function sendEmail(templateName, to, vars = {}) {
   if (!build) throw new Error(`Unknown email template: ${templateName}`);
 
   const { subject, html, text } = build(vars);
-console.log("[sendEmail]", templateName, to, JSON.stringify(vars));
-console.log(html);
   try {
     const info = await transporter.sendMail({
       from: process.env.SMTP_FROM,
@@ -40,6 +38,9 @@ console.log(html);
       default:
         console.error(`[${templateName}] send failed:`, err.message);
     }
+    // Bad credentials or a rejected address fail the same way every time, so the
+    // consumer sends these straight to the dead-letter queue instead of retrying.
+    err.retryable = !["EAUTH", "EENVELOPE"].includes(err.code);
     throw err;
   }
 }
@@ -47,3 +48,5 @@ console.log(html);
 // thin named wrappers — nice call sites, no duplicated logic
 export const sendResetPasswordEmail = (to, resetUrl) => sendEmail("resetPassword", to, { resetUrl });
 export const sendVerifyEmail = (to, verifyUrl) => sendEmail("verifyEmail", to, { verifyUrl });
+export const sendOrderPlacedEmail = (to, order) => sendEmail("orderPlaced", to, order);
+export const sendOrderStatusEmail = (to, order) => sendEmail("orderStatus", to, order);

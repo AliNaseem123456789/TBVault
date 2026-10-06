@@ -7,6 +7,7 @@ import { getProductById, getProducts } from '../../api/products.api';
 import { getImageUrl, mapProductForCard } from '../../utils/product';
 import { useCart } from '../../features/cart/CartProvider';
 import { useAuth } from '../../features/auth/AuthProvider';
+import ProductReviews from '../../features/reviews/ProductReviews';
 import './ProductDetail.css';
 
 const ProductDetail = () => {
@@ -226,6 +227,8 @@ const ProductDetail = () => {
           </div>
         </div>
       </div>
+
+      <ProductReviews productId={product.id} />
 
       {related.length > 0 && (
         <section className="section product-detail__related">

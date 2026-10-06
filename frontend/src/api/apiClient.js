@@ -40,28 +40,30 @@ async function refreshAccessToken() {
 // -------------------------
 // RESPONSE INTERCEPTOR
 // -------------------------
+// Auth endpoints that legitimately return 401 (bad password, expired refresh
+// cookie). Retrying them through a refresh makes no sense.
+const NO_REFRESH = ["/auth/login", "/auth/register", "/auth/refresh", "/auth/change-password"];
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest =error.config;
-    if (
-      error.response?.status !== 401 ||
-      originalRequest._retry
-    ) {
+    const originalRequest = error.config;
+    const isAuthEndpoint = NO_REFRESH.some((path) => originalRequest?.url?.includes(path));
+
+    if (error.response?.status !== 401 || originalRequest._retry || isAuthEndpoint) {
       return Promise.reject(error);
     }
     originalRequest._retry = true;
     try {
-      const newAccessToken =await refreshAccessToken();
-      originalRequest.headers.Authorization =`Bearer ${newAccessToken}`;
+      const newAccessToken = await refreshAccessToken();
+      // Let AuthProvider keep React state in sync with localStorage.
+      window.dispatchEvent(new CustomEvent("auth:token", { detail: newAccessToken }));
+      originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
       return api(originalRequest);
     } catch (refreshError) {
-      localStorage.removeItem(
-        "accessToken"
-      );
-      // later:
-      // redirect to login
-      // clear auth state
+      localStorage.removeItem("accessToken");
+      // Session is gone for good: AuthProvider clears its state and ProtectedRoute sends the user to /login.
+      window.dispatchEvent(new Event("auth:logout"));
       return Promise.reject(refreshError);
     }
   }

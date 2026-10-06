@@ -1,0 +1,12 @@
+.star-rating { display: inline-flex; gap: 2px; color: var(--color-border-strong); }
+.star-rating .is-filled { color: var(--color-star); }
+.star-rating--input button {
+  padding: 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: transform var(--duration-fast);
+}
+.star-rating--input button:hover { transform: scale(1.15); }
+.star-rating--input button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }

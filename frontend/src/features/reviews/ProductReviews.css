@@ -1,0 +1,38 @@
+.product-reviews { display: flex; flex-direction: column; gap: var(--space-5); }
+.product-reviews__header { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--space-5); flex-wrap: wrap; }
+.product-reviews__header h2 { margin-top: var(--space-2); }
+
+.product-reviews__summary { display: flex; align-items: center; gap: var(--space-3); }
+.product-reviews__summary strong { font-size: var(--text-3xl); font-weight: var(--weight-extra); line-height: 1; }
+.product-reviews__summary div { display: flex; flex-direction: column; gap: var(--space-1); }
+.product-reviews__summary span { font-size: var(--text-sm); color: var(--color-ink-muted); }
+
+.product-reviews__note { color: var(--color-ink-muted); font-size: var(--text-sm); }
+.product-reviews__note a { color: var(--color-accent); font-weight: var(--weight-semibold); }
+.product-reviews__skeleton { height: 120px; border-radius: var(--radius-lg); }
+
+.product-reviews__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-4); }
+.review-item { padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); }
+.review-item__top { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); }
+.review-item__date { font-size: var(--text-xs); color: var(--color-ink-faint); }
+.review-item__comment { color: var(--color-ink); line-height: var(--leading-normal); white-space: pre-line; }
+.review-item__author { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; font-size: var(--text-sm); }
+.review-item__author span { color: var(--color-ink-muted); font-size: var(--text-xs); }
+.review-item__actions { display: inline-flex; gap: var(--space-3); margin-left: auto; }
+.review-item__actions button {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--color-accent);
+  cursor: pointer;
+}
+.review-item__actions button:hover { text-decoration: underline; }
+
+.review-form { padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
+.review-form h3 { font-size: var(--text-lg); }
+.review-form__textarea { resize: vertical; min-height: 100px; font-family: inherit; }
+.review-form__actions { display: flex; gap: var(--space-3); }
+.product-reviews__more { align-self: center; }

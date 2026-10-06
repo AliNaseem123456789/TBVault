@@ -1,6 +1,0 @@
-docker compose -f docker-compose.monitoring.yml up -d    
-//to start prometheus grafana    
-
-docker compose -f docker-compose.monitoring.yml logs prometheus
-docker compose -f docker-compose.monitoring.yml logs grafana
-                                                        

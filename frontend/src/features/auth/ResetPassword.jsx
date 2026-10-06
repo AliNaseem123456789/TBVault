@@ -9,8 +9,9 @@ const ResetPassword = () => {
   const navigate = useNavigate();
   const token = searchParams.get("token");
 
-  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -23,13 +24,20 @@ const ResetPassword = () => {
       setError("Missing or invalid reset link");
       return;
     }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
 
+    setSubmitting(true);
     try {
-      const res = await resetPassword(token, email, password);
-      setMessage(res.message || "Password changed successfully");
+      const res = await resetPassword(token, password, confirmPassword);
+      setMessage((res.message || "Password changed successfully") + " Redirecting to log in…");
       setTimeout(() => navigate("/login"), 1500);
     } catch (err) {
       setError(err?.response?.data?.message || "Reset failed");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -45,19 +53,6 @@ const ResetPassword = () => {
     >
       <form onSubmit={handleSubmit} className="auth-form">
         <div className="field">
-          <label htmlFor="reset-email">Email</label>
-          <input
-            id="reset-email"
-            type="email"
-            className="input"
-            placeholder="you@email.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-        </div>
-
-        <div className="field">
           <label htmlFor="reset-password">New password</label>
           <input
             id="reset-password"
@@ -66,6 +61,23 @@ const ResetPassword = () => {
             placeholder="••••••••"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            minLength={8}
+            autoComplete="new-password"
+            required
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="reset-confirm">Confirm new password</label>
+          <input
+            id="reset-confirm"
+            type="password"
+            className="input"
+            placeholder="••••••••"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            minLength={8}
+            autoComplete="new-password"
             required
           />
         </div>
@@ -73,8 +85,8 @@ const ResetPassword = () => {
         {message && <p className="form-alert form-alert-success">{message}</p>}
         {error && <p className="form-alert form-alert-error">{error}</p>}
 
-        <Button type="submit" className="auth-form__submit">
-          Reset password
+        <Button type="submit" className="auth-form__submit" disabled={submitting}>
+          {submitting ? "Saving…" : "Reset password"}
         </Button>
       </form>
     </AuthLayout>

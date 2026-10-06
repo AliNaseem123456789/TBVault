@@ -88,3 +88,29 @@
 
 .profile-card--wide { grid-column: 1 / -1; }
 .profile-card__actions { display: flex; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-1); }
+
+/* ---------- Edit name / change password ---------- */
+.profile-summary__edit {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: var(--space-2);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-accent);
+  cursor: pointer;
+  vertical-align: middle;
+}
+.profile-summary__edit:hover { text-decoration: underline; }
+.profile-name-form { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+.profile-name-form .input { flex: 1 1 180px; }
+.profile-password-form {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+  align-items: end;
+}
+.profile-password-form > .form-alert,
+.profile-password-form > div:last-child { grid-column: 1 / -1; }
+@media (max-width: 767px) { .profile-password-form { grid-template-columns: 1fr; } }

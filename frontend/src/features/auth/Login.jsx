@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "./AuthProvider";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import AuthLayout from "./AuthLayout";
 import Button from "../../components/ui/Button";
 
@@ -12,13 +12,15 @@ const Login = () => {
 
   const { login } = auth;
   const navigate = useNavigate();
+  // ProtectedRoute passes the page the user was trying to reach.
+  const location = useLocation();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     try {
-      const result = await login(email, password);
-      navigate("/profile");
+      await login(email, password);
+      navigate(location.state?.from || "/profile", { replace: true });
     } catch (err) {
       console.log("login threw an error:", err);
       setError(err?.response?.data?.message || "Login failed");

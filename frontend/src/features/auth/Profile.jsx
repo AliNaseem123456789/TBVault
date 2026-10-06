@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 import { useCart } from '../cart/CartProvider';
-import { verifyEmail, logoutAll as logoutAllApi } from '../../api/auth.api';
+import { verifyEmail, logoutAll as logoutAllApi, updateMe, changePassword } from '../../api/auth.api';
 import Button from '../../components/ui/Button';
 import Icon from '../../components/ui/Icon';
 import './Profile.css';
@@ -20,7 +20,7 @@ import './Profile.css';
  * same staleness (see its comment).
  */
 const Profile = () => {
-  const { user, logout, refreshUser } = useAuth();
+  const { user, logout, refreshUser, setToken, isAdmin } = useAuth();
   const { count: cartCount, openCart } = useCart();
   const navigate = useNavigate();
 
@@ -28,6 +28,15 @@ const Profile = () => {
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   const [signingOutAll, setSigningOutAll] = useState(false);
+
+  // Edit name
+  const [editingName, setEditingName] = useState(false);
+  const [name, setName] = useState('');
+  const [nameStatus, setNameStatus] = useState({ saving: false, error: '' });
+
+  // Change password
+  const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [pwStatus, setPwStatus] = useState({ saving: false, error: '', message: '' });
 
   useEffect(() => {
     refreshUser?.();
@@ -57,7 +66,7 @@ const Profile = () => {
     setError('');
     setSending(true);
     try {
-      const res = await verifyEmail(user?.email);
+      const res = await verifyEmail();
       setMessage(res.message || 'Verification email sent — check your inbox.');
     } catch (err) {
       const status = err?.response?.status;
@@ -76,6 +85,45 @@ const Profile = () => {
     }
   };
 
+  const startEditingName = () => {
+    setName(user?.name || '');
+    setNameStatus({ saving: false, error: '' });
+    setEditingName(true);
+  };
+
+  const handleSaveName = async (e) => {
+    e.preventDefault();
+    setNameStatus({ saving: true, error: '' });
+    try {
+      await updateMe({ name });
+      await refreshUser?.();
+      setEditingName(false);
+      setNameStatus({ saving: false, error: '' });
+    } catch (err) {
+      setNameStatus({ saving: false, error: err?.response?.data?.message || 'Could not update your name' });
+    }
+  };
+
+  const updatePw = (field) => (e) => setPw((p) => ({ ...p, [field]: e.target.value }));
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (pw.newPassword !== pw.confirmPassword) {
+      setPwStatus({ saving: false, error: 'New passwords do not match', message: '' });
+      return;
+    }
+    setPwStatus({ saving: true, error: '', message: '' });
+    try {
+      const res = await changePassword(pw);
+      // The backend signed out every other session and issued this one a new token.
+      await setToken(res.data.accessToken);
+      setPw({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setPwStatus({ saving: false, error: '', message: 'Password changed. Other devices have been signed out.' });
+    } catch (err) {
+      setPwStatus({ saving: false, error: err?.response?.data?.message || 'Could not change your password', message: '' });
+    }
+  };
+
   const initial = user?.name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?';
 
   return (
@@ -89,7 +137,33 @@ const Profile = () => {
         <section className="card profile-summary">
           <div className="profile-summary__avatar">{initial}</div>
           <div className="profile-summary__info">
-            <h2>{user?.name || 'Your account'}</h2>
+            {editingName ? (
+              <form className="profile-name-form" onSubmit={handleSaveName}>
+                <input
+                  className="input"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  maxLength={50}
+                  aria-label="Your name"
+                  autoFocus
+                  required
+                />
+                <Button type="submit" size="sm" disabled={nameStatus.saving}>
+                  {nameStatus.saving ? 'Saving…' : 'Save'}
+                </Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setEditingName(false)}>
+                  Cancel
+                </Button>
+              </form>
+            ) : (
+              <h2>
+                {user?.name || 'Your account'}{' '}
+                <button type="button" className="profile-summary__edit" onClick={startEditingName}>
+                  Edit name
+                </button>
+              </h2>
+            )}
+            {nameStatus.error && <p className="form-alert form-alert-error">{nameStatus.error}</p>}
             <p>{user?.email}</p>
 
             {user?.is_verified ? (
@@ -137,6 +211,53 @@ const Profile = () => {
           <Button to="/orders" variant="ghost">
             View orders
           </Button>
+        </section>
+
+        {isAdmin && (
+          <section className="card profile-card">
+            <h3>
+              <Icon name="shield" size={18} /> Admin
+            </h3>
+            <p>Manage products, categories and orders.</p>
+            <Button to="/admin" variant="ghost">
+              Open dashboard
+            </Button>
+          </section>
+        )}
+
+        <section className="card profile-card profile-card--wide">
+          <h3>Password</h3>
+          {user?.has_password === false ? (
+            <p>
+              You sign in with Google, so this account has no password. To add one, use{' '}
+              <a href="/forgot-password">Forgot password</a> with {user?.email}.
+            </p>
+          ) : (
+            <form className="profile-password-form" onSubmit={handleChangePassword}>
+              <div className="field">
+                <label htmlFor="pw-current">Current password</label>
+                <input id="pw-current" type="password" className="input" autoComplete="current-password"
+                  value={pw.currentPassword} onChange={updatePw('currentPassword')} required />
+              </div>
+              <div className="field">
+                <label htmlFor="pw-new">New password</label>
+                <input id="pw-new" type="password" className="input" autoComplete="new-password" minLength={8}
+                  value={pw.newPassword} onChange={updatePw('newPassword')} required />
+              </div>
+              <div className="field">
+                <label htmlFor="pw-confirm">Confirm new password</label>
+                <input id="pw-confirm" type="password" className="input" autoComplete="new-password" minLength={8}
+                  value={pw.confirmPassword} onChange={updatePw('confirmPassword')} required />
+              </div>
+              {pwStatus.error && <p className="form-alert form-alert-error">{pwStatus.error}</p>}
+              {pwStatus.message && <p className="form-alert form-alert-success">{pwStatus.message}</p>}
+              <div>
+                <Button type="submit" disabled={pwStatus.saving}>
+                  {pwStatus.saving ? 'Saving…' : 'Change password'}
+                </Button>
+              </div>
+            </form>
+          )}
         </section>
 
         <section className="card profile-card profile-card--wide">

@@ -4,12 +4,9 @@ export const addCartItems=async(req,res)=>{
     const product_id=Number(req.body.product_id)
     const user_id=Number(req.user.sub)
     if(!product_id){
-        console.log("no id")
         return res.status(400).json({message:"product id is needed"})
     }
        if(!user_id){
-                console.log("no user id")
-
         return res.status(400).json({message:"user id is needed"})
     }
     const quantity=req.body.quantity !==undefined ? Number(req.body.quantity):1
@@ -17,6 +14,10 @@ export const addCartItems=async(req,res)=>{
   return res.status(400).json({ message: "quantity must be a positive integer" });
 }
     try{
+      const product=await prisma.product.findUnique({where:{id:product_id},select:{is_hidden:true}})
+      if(!product || product.is_hidden){
+        return res.status(404).json({message:"Product not found"})
+      }
       const cart=await prisma.cart.upsert({
         where:{user_id},
         update:{},

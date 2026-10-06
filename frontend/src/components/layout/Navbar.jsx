@@ -22,7 +22,7 @@ const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const { count: cartCount, openCart } = useCart();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isAdmin } = useAuth();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -44,6 +44,11 @@ const Navbar = () => {
               {link.label}
             </NavLink>
           ))}
+          {isAdmin && (
+            <NavLink to="/admin" className="navbar__link">
+              Admin
+            </NavLink>
+          )}
         </nav>
 
         <div className="navbar__actions">
@@ -88,6 +93,11 @@ const Navbar = () => {
           >
             Account
           </Link>
+          {isAdmin && (
+            <NavLink to="/admin" className="navbar__mobile-link" onClick={() => setMenuOpen(false)}>
+              Admin
+            </NavLink>
+          )}
         </nav>
       )}
     </header>

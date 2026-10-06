@@ -6,8 +6,6 @@ import Login from "./features/auth/Login";
 import Profile from "./features/auth/Profile";
 import Signup from "./features/auth/signup";
 import OAuthSuccess from "./features/auth/OAuthSuccess";
-// import AdminDashboard from "./features/admin/AdminDashboard";
-// import Unauthorized from "./pages/Unauthorized";
 import ResetPassword from "./features/auth/ResetPassword";
 import VerifyEmail from "./features/auth/VerifyEmail";
 import ConfirmEmail from "./features/auth/ConfirmEmail";
@@ -20,6 +18,8 @@ import ProductDetail from "./pages/ProductDetail/ProductDetail";
 import Checkout from "./pages/Checkout/Checkout";
 import Orders from "./pages/Orders/Orders";
 import OrderDetail from "./pages/OrderDetail/OrderDetail";
+import AdminDashboard from "./pages/Admin/AdminDashboard";
+import Unauthorized from "./pages/Unauthorized/Unauthorized";
 
 const App = () => {
   return (
@@ -46,10 +46,12 @@ const App = () => {
               <Route path="/orders/:id" element={<OrderDetail />} />
             </Route>
 
-            {/* only CUSTOMER or ADMIN roles */}
-            <Route element={<ProtectedRoute allowedRoles={["CUSTOMER", "ADMIN"]} />}>
-              {/* <Route path="/orders" element={<Orders />} /> */}
+            {/* Admin only. ProtectedRoute waits for /auth/me before checking the role. */}
+            <Route element={<ProtectedRoute allowedRoles={["ADMIN"]} />}>
+              <Route path="/admin" element={<AdminDashboard />} />
             </Route>
+
+            <Route path="/unauthorized" element={<Unauthorized />} />
           </Route>
 
           <Route path="/oauth-success" element={<OAuthSuccess />} />
@@ -61,14 +63,6 @@ const App = () => {
 
           <Route path="/login" element={<Login />} />
           <Route path="/sign-up" element={<Signup />} />
-          {/* <Route path="/unauthorized" element={<Unauthorized />} /> */}
-
-          {/* only ADMIN — a dashboard likely wants its own chrome, not the
-              storefront Layout, so this stays a separate top-level block */}
-          <Route element={<ProtectedRoute allowedRoles={["ADMIN"]} />}>
-            {/* <Route path="/admin" element={<AdminDashboard />} /> */}
-          </Route>
-
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </CartProvider>

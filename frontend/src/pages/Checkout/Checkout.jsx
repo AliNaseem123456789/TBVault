@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../../features/cart/CartProvider';
 import { createOrder } from '../../api/orders.api';
@@ -17,6 +17,8 @@ import './Checkout.css';
  * There's no payment step here: createOrder doesn't touch payment at
  * all (no gateway wired up on the backend yet), so this is a
  * place-order-now / pay-on-delivery-style flow until that's decided.
+ *
+ * Placing an order sends an Idempotency-Key header (see orders.api.js).
  */
 const Checkout = () => {
   const { items, subtotal, refresh } = useCart();
@@ -25,6 +27,8 @@ const Checkout = () => {
   const [form, setForm] = useState({ fullName: '', phone: '', street: '', city: '', postalCode: '' });
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState('');
+  // One key per checkout attempt. Retries reuse it, so the server can't create the order twice.
+  const idempotencyKey = useRef(crypto.randomUUID());
 
   const updateField = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
 
@@ -43,7 +47,7 @@ const Checkout = () => {
 
     setPlacing(true);
     try {
-      const res = await createOrder(shippingAddress);
+      const res = await createOrder(shippingAddress, idempotencyKey.current);
       const orderId = res?.data?.order?.id;
       refresh?.();
       if (orderId) {
@@ -52,6 +56,10 @@ const Checkout = () => {
         navigate('/orders');
       }
     } catch (err) {
+      // A 4xx means the server rejected this attempt (and released the key); start fresh next time.
+      if (err?.response?.status && err.response.status < 500 && err.response.status !== 409) {
+        idempotencyKey.current = crypto.randomUUID();
+      }
       setError(err?.response?.data?.message || 'Could not place your order. Please try again.');
     } finally {
       setPlacing(false);

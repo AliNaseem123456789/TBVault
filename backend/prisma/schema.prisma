@@ -90,7 +90,8 @@ model User {
   sessions                   Session[]
   password_reset_tokens      PasswordResetToken[]
   email_verification_tokens  EmailVerificationToken[]
-  oauth_accounts              OAuthAccount[]           
+  oauth_accounts              OAuthAccount[]
+  reviews                     Review[]
   @@map("users")
 }
 model OAuthAccount {
@@ -163,13 +164,18 @@ model ProductImage {
 model Review {
   id         Int      @id @default(autoincrement())
   product_id Int
-  rating     Int
+  user_id    Int
+  rating     Int      // 1-5, validated in reviews.controller.js
   comment    String?  @db.Text
   created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
   product    Product  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
+  @@unique([product_id, user_id])   // one review per user per product
   @@index([product_id])
+  @@index([user_id])
   @@map("reviews")
 }
 

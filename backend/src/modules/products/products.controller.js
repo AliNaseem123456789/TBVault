@@ -1,36 +1,67 @@
 import prisma from "../../config/db.js"
-import { PutObjectCommand } from "@aws-sdk/client-s3";
-import storage from "../../config/storage.js";
+import { PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import storage, { BUCKET } from "../../config/storage.js";
 import path from "path"
-import crypto from"crypto";
+import crypto from "crypto";
+
+// Validates and normalises a product body. `partial` is for updates, where every field is optional.
+const parseProductInput = (body, { partial = false } = {}) => {
+    const data = {}
+    const has = (k) => body[k] !== undefined
+
+    if (has("name") || !partial) {
+        const name = typeof body.name === "string" ? body.name.trim() : ""
+        if (!name || name.length > 100) return { error: "name must be 1-100 characters" }
+        data.name = name
+    }
+    if (has("description")) {
+        if (body.description !== null && typeof body.description !== "string") return { error: "description must be text" }
+        data.description = body.description
+    }
+    if (has("price") || !partial) {
+        const price = Number(body.price)
+        if (!Number.isFinite(price) || price < 0) return { error: "price must be a number of 0 or more" }
+        data.price = price
+    }
+    if (has("stock")) {
+        const stock = Number(body.stock)
+        if (!Number.isInteger(stock) || stock < 0) return { error: "stock must be a whole number of 0 or more" }
+        data.stock = stock
+    }
+    if (has("is_hidden")) {
+        if (typeof body.is_hidden !== "boolean") return { error: "is_hidden must be true or false" }
+        data.is_hidden = body.is_hidden
+    }
+    if (has("category_id") || !partial) {
+        const category_id = Number(body.category_id)
+        if (!Number.isInteger(category_id) || category_id < 1) return { error: "category_id must be a positive integer" }
+        data.category_id = category_id
+    }
+    return { data }
+}
+
 export const createProducts=async(req,res)=>{
-    const {name,description,price,stock,is_hidden,category_id}=req.body;
-    // if(!Number.isInteger(price)|| !Number.isInteger(stock)||typeof(is_hidden)==="boolean"){
-    //     return res.status(400)
-    // }
+    const { data, error } = parseProductInput(req.body)
+    if (error) return res.status(400).json({ message: error })
     try{
-        const product=await prisma.product.create({data:{
-            name:name,
-            description:description,
-            price:price,
-            stock:stock,
-            is_hidden:is_hidden,
-            category_id:category_id,
-        }})
+        const product=await prisma.product.create({ data })
         return res.status(201).json({message:"product Created",data:{product}})
-        
     }catch(err){
-        if(err.code=="P2002"){
-            return res.status(409).json({message:"Product Already Exists"})
+        if(err.code==="P2003"){
+            return res.status(400).json({message:"Category doesn't exist"})
         }
-    console.error(err);
-    return res.status(500).json({ message: "Database Error" });
+        console.error("createProducts error:",err);
+        return res.status(500).json({ message: "Database Error" });
     }
 }
+
+// Admin listing: same filters as the public one, but hidden products are included.
+export const getProductsAdmin = (req, res) => getProductsByCategory(req, res, { includeHidden: true })
+
 // GET /products?
 // search=phone&categoryId=2&minPrice=100&maxPrice=1000&inStock=true&sortBy=price
 // &order=asc&page=2&limit=10
-export const getProductsByCategory = async (req, res) => {
+export const getProductsByCategory = async (req, res, { includeHidden = false } = {}) => {
   const { search, sortBy, order, inStock } = req.query;
 
   let categoryId;
@@ -115,7 +146,8 @@ export const getProductsByCategory = async (req, res) => {
     }
   }
   // Build WHERE dynamically
-  const where = {};
+  // Hidden products are only visible to admins.
+  const where = includeHidden ? {} : { is_hidden: false };
  
   if (search) {
     where.OR = [
@@ -216,47 +248,66 @@ export const getProductsByCategory = async (req, res) => {
   }
 };
 
-export const getProductsById=async(req,res)=>{
+export const getProductsById=async(req,res,{ includeHidden = false } = {})=>{
     const id=Number(req.params.id)
+    if(!Number.isInteger(id) || id < 1){
+        return res.status(400).json({message:"invalid product id"})
+    }
     try{
         const product=await prisma.product.findUnique(
             {
                 where:{id:id},
-                include:{images:{orderBy:{is_primary:"desc"}}}
+                include:{
+                    images:{orderBy:[{is_primary:"desc"},{created_at:"asc"}]},
+                    category:{select:{id:true,name:true}}
+                }
             }
         )
-        if (!product) {
+        if (!product || (product.is_hidden && !includeHidden)) {
          return res.status(404).json({ message: "Product not found" });
             }
-        return res.status(200).json({message:"product Created",data:{product}})
+        return res.status(200).json({message:"product found",data:{product}})
     }catch(err){
+    console.error("getProductsById error:",err)
     return res.status(500).json({message:"Database Error"})
     }
 }
 export const updateProductsById=async(req,res)=>{
     const id=Number(req.params.id)
-    const {name,description,price,stock,is_hidden,category_id}=req.body;
+    if(!Number.isInteger(id) || id < 1){
+        return res.status(400).json({message:"invalid product id"})
+    }
+    const { data, error } = parseProductInput(req.body, { partial: true })
+    if (error) return res.status(400).json({ message: error })
      try{
-        const product=await prisma.product.update({where:{id:id},data:{
-            name:name,
-            description:description,
-            price:price,
-            stock:stock,
-            is_hidden:is_hidden,
-            category_id:category_id}})
+        const product=await prisma.product.update({where:{id:id},data})
         return res.status(200).json({message:"product found",data:{product}})
     }catch(err){
         if(err.code==="P2025"){
             return res.status(404).json({message:"Product doesnt Exist"})
         }
+        if(err.code==="P2003"){
+            return res.status(400).json({message:"Category doesn't exist"})
+        }
+    console.error("updateProductsById error:",err)
     return res.status(500).json({message:"Database Error"})
     }
 }
 
 export const deleteProducts=async(req,res)=>{
     const id=Number(req.params.id)
+    if(!Number.isInteger(id) || id < 1){
+        return res.status(400).json({message:"invalid product id"})
+    }
      try{
+        // OrderItem cascades on product delete, which would erase order history.
+        const ordered=await prisma.orderItem.count({where:{product_id:id}})
+        if(ordered>0){
+            return res.status(409).json({message:"This product is in past orders. Hide it instead of deleting it."})
+        }
+        const images=await prisma.productImage.findMany({where:{product_id:id},select:{key:true}})
         await prisma.product.delete({where:{id:id}})
+        await Promise.all(images.map(({key})=>storage.send(new DeleteObjectCommand({Bucket:BUCKET,Key:key})).catch(()=>{})))
         return res.status(204).send()
     }catch(err){
         if(err.code==="P2025"){
@@ -341,7 +392,7 @@ if (primaryIndex !== undefined &&(!Number.isInteger(primaryIndex) ||primaryIndex
 
         await storage.send(
           new PutObjectCommand({
-            Bucket: "tbvault",
+            Bucket: BUCKET,
             Key: key,
             Body: file.buffer,
             ContentType: file.mimetype
@@ -386,93 +437,52 @@ if (primaryIndex !== undefined &&(!Number.isInteger(primaryIndex) ||primaryIndex
     });
   }
 };
-// export const productUpload=async(req,res)=>{
-//     const {productId}=req.params;
-//     try{
-//         const exists=await prisma.product.findUnique({where:{id:Number(productId)}})
-//         if(!exists){
-//             return res.status(404).json({message:"product doesnt exits"})
-//         }
-//         if(!req.file){
-//             return res.status(400).json({message:"Image is required"})
-//         }
-        
-//         const extension=path.extname(req.file.originalname)
-//         const filename=`${crypto.randomUUID()}${extension}`
-//         const key=`products/${productId}/${filename}`
-//         await storage.send(new PutObjectCommand({
-//             Bucket:"tbvault",
-//             Key:key,
-//             Body:req.file.buffer,
-//             contentType:req.file.mimetype
-//         }))
-//         await prisma.productImage.create({data:{
-//             product_id:Number(productId),
-//             key:key,
-//             original_name:req.file.originalname,
-//             mime_type:req.file.mimetype,
-//             size:req.file.size
+export const getProductByIdAdmin = (req, res) => getProductsById(req, res, { includeHidden: true })
 
-//         }})
-//         return res.status(200).json({message:"",
-//             filename:req.file.originalname,
-//             type:req.file.mimetype,
-//             size:req.file.size
-//         })
-//     }catch(err){
-//         console.log(err)
-//         return res.status(500).json({message:"upload failed"})
-//     }
-// }
+// DELETE /products/:productId/images/:imageId
+export const deleteProductImage = async (req, res) => {
+  const productId = Number(req.params.productId);
+  const imageId = Number(req.params.imageId);
+  if (!Number.isInteger(productId) || !Number.isInteger(imageId)) {
+    return res.status(400).json({ message: "invalid id" });
+  }
+  try {
+    const image = await prisma.productImage.findFirst({ where: { id: imageId, product_id: productId } });
+    if (!image) return res.status(404).json({ message: "Image not found" });
 
-// model Product {
-//   id          Int       @id @default(autoincrement())
-//   name        String    @db.VarChar(100)
-//   description String?   @db.Text
-//   price       Decimal   @db.Decimal(10, 2)
-//   stock       Int       @default(0)
-//   is_hidden   Boolean   @default(false)
-//   created_at  DateTime  @default(now())
-//   updated_at  DateTime  @updatedAt
+    await prisma.productImage.delete({ where: { id: image.id } });
+    // If we removed the primary image, promote the oldest remaining one.
+    if (image.is_primary) {
+      const next = await prisma.productImage.findFirst({ where: { product_id: productId }, orderBy: { created_at: "asc" } });
+      if (next) await prisma.productImage.update({ where: { id: next.id }, data: { is_primary: true } });
+    }
+    await storage.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: image.key })).catch((err) =>
+      console.error("[storage] failed to delete object", image.key, err.message)
+    );
+    return res.status(204).send();
+  } catch (err) {
+    console.error("deleteProductImage error:", err);
+    return res.status(500).json({ message: "Database Error" });
+  }
+};
 
-//   category_id Int
-//   category    Category  @relation(fields: [category_id], references: [id])
-
-//   reviews     Review[]
-//   cart_items  CartItem[]
-//   order_items OrderItem[]
-
-//   @@index([category_id])
-//   @@index([name])
-//   @@index([price])
-//   @@index([created_at])
-//   @@map("products")
-// }
-
-// model Category {
-//   id         Int       @id @default(autoincrement())
-//   name       String    @unique @db.VarChar(100)
-//   created_at DateTime  @default(now())
-
-//   products   Product[]
-
-//   @@map("categories")
-// }
-
-
-// model ProductImage {
-//   id            Int      @id @default(autoincrement())
-//   product_id    Int
-//   key           String
-//   original_name String?
-//   mime_type     String?
-//   size          Int?
-//   is_primary    Boolean  @default(false)
-
-//   created_at    DateTime @default(now())
-
-//   product       Product  @relation(
-//     fields: [product_id],
-//     references: [id],
-//     onDelete: Cascade
-//   )
+// PATCH /products/:productId/images/:imageId/primary
+export const setPrimaryImage = async (req, res) => {
+  const productId = Number(req.params.productId);
+  const imageId = Number(req.params.imageId);
+  if (!Number.isInteger(productId) || !Number.isInteger(imageId)) {
+    return res.status(400).json({ message: "invalid id" });
+  }
+  try {
+    const image = await prisma.productImage.findFirst({ where: { id: imageId, product_id: productId } });
+    if (!image) return res.status(404).json({ message: "Image not found" });
+    await prisma.$transaction([
+      prisma.productImage.updateMany({ where: { product_id: productId }, data: { is_primary: false } }),
+      prisma.productImage.update({ where: { id: image.id }, data: { is_primary: true } }),
+    ]);
+    return res.status(200).json({ message: "Primary image updated" });
+  } catch (err) {
+    console.error("setPrimaryImage error:", err);
+    return res.status(500).json({ message: "Database Error" });
+  }
+};

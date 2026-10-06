@@ -25,13 +25,14 @@ export const forgotPassword = async (email) => {
   return response.data;
 };
 
-export const resetPassword = async (token, email, password) => {
-  const response = await api.post(`/auth/reset-password?token=${token}`, { email, password });
+export const resetPassword = async (token, password, confirmPassword) => {
+  const response = await api.post(`/auth/reset-password?token=${encodeURIComponent(token)}`, { password, confirmPassword });
   return response.data;
 };
 
-export const verifyEmail = async (email) => {
-  const response = await api.post("/auth/verify-email", { email });
+// The backend reads the account from the access token; no email is sent.
+export const verifyEmail = async () => {
+  const response = await api.post("/auth/verify-email");
   return response.data;
 };
 
@@ -41,5 +42,16 @@ export const confirmEmail = async (token) => {
 };
 export const me = async () => {
   const response = await api.get("/auth/me");
+  return response.data;
+};
+
+export const updateMe = async ({ name }) => {
+  const response = await api.patch("/auth/me", { name });
+  return response.data;
+};
+
+// Returns a fresh accessToken: every other session is signed out.
+export const changePassword = async ({ currentPassword, newPassword, confirmPassword }) => {
+  const response = await api.post("/auth/change-password", { currentPassword, newPassword, confirmPassword });
   return response.data;
 };
