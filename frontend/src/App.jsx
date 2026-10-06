@@ -4,7 +4,7 @@ import { CartProvider } from "./features/cart/CartProvider";
 import ProtectedRoute from "./features/auth/ProtectedRoute";
 import Login from "./features/auth/Login";
 import Profile from "./features/auth/Profile";
-import Signup from "./features/auth/signup";
+import Signup from "./features/auth/Signup";
 import OAuthSuccess from "./features/auth/OAuthSuccess";
 import ResetPassword from "./features/auth/ResetPassword";
 import VerifyEmail from "./features/auth/VerifyEmail";

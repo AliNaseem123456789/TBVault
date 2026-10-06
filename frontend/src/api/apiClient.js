@@ -1,5 +1,6 @@
 import axios from "axios";
-const Base_URL="http://localhost:3000/api"
+// Set VITE_API_URL in frontend/.env for other environments.
+const Base_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api"
 const api = axios.create({
   baseURL: Base_URL,
   withCredentials: true

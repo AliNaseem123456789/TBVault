@@ -1,34 +1,14 @@
 import api from "./apiClient";
 
 /**
- * Cart API. Mirrors products.api.js / categories.api.js.
+ * Cart API. Every route needs the Bearer token (apiClient attaches it).
  *
- * Routes confirmed from the real cart.routes.js:
- *   POST   /cart/items            -> addCartItems
- *   GET    /cart                  -> getCartItems
- *   PATCH  /cart/items/:productId -> updateCartItems
- *   DELETE /cart/items/:productId -> deleteCartItems
- *   DELETE /cart                  -> deleteCart (clears everything)
- *
- * cart.controller.js currently reads the target product from
- * `req.body.product_id` (snake_case) in addCartItems/updateCartItems/
- * deleteCartItems — never from req.params.productId, even on the two
- * routes that put it in the URL. So every write below sends
- * `product_id` in the body AND `:productId` in the URL, to satisfy
- * both the route pattern and what the controller actually reads.
- * If updateCartItems/deleteCartItems get changed to read
- * req.params.productId instead (recommended — the URL already
- * uniquely identifies the item), drop the body's product_id here and
- * this file gets simpler.
- *
- * All five handlers read req.user.sub, so every request needs the
- * Bearer token — apiClient.js's request interceptor already attaches
- * it whenever one is in localStorage.
- *
- * getCartItems responds with { message, data: { cart } } where cart
- * comes from prisma.cart.findMany (not findUnique), so `data.cart` is
- * an ARRAY — CartProvider unwraps cart[0] since a user has at most
- * one cart (user_id is @unique on the Cart model).
+ *   GET    /cart                  -> { data: { cart } }  cart is an array with at most
+ *                                    one element; CartProvider reads cart[0]
+ *   POST   /cart/items            body: { product_id, quantity }
+ *   PATCH  /cart/items/:productId body: { quantity }
+ *   DELETE /cart/items/:productId
+ *   DELETE /cart                  clears everything
  */
 
 export const getCart = async () => {

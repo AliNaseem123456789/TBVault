@@ -3,23 +3,21 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 import "./AuthLayout.css";
 
+// Google sign-in lands here with ?token=<accessToken>. Store it, load the user,
+// then leave the page with `replace` so the token isn't kept in browser history.
 const OAuthSuccess = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const auth = useAuth();
-  console.log("OAuthSuccess: auth context =", auth);
+  const { setToken } = useAuth();
 
   useEffect(() => {
     const token = searchParams.get("token");
-    console.log("OAuthSuccess: token from URL =", token);
-    if (token) {
-      auth.setToken(token);
-      console.log("OAuthSuccess: called setToken, navigating to /profile");
-      navigate("/profile");
-    } else {
-      console.log("OAuthSuccess: no token, redirecting to login");
-      navigate("/login?error=oauth_failed");
+    if (!token) {
+      navigate("/login?error=oauth_failed", { replace: true });
+      return;
     }
+    setToken(token).then(() => navigate("/profile", { replace: true }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

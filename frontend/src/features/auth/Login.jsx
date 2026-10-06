@@ -22,7 +22,6 @@ const Login = () => {
       await login(email, password);
       navigate(location.state?.from || "/profile", { replace: true });
     } catch (err) {
-      console.log("login threw an error:", err);
       setError(err?.response?.data?.message || "Login failed");
     }
   };

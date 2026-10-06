@@ -2,6 +2,7 @@ import prisma from "../../config/db.js"
 import redis from "../../config/redis.client.js"
 import { publishOrderEvent } from "../../events/publishers/order.publisher.js"
 import { ORDER_EVENTS } from "../../events/eventNames.js"
+import { ORDER_STATUSES, canTransition } from "./order.status.js"
 export const getOrders=async(req,res)=>{
     const user_id=Number(req.user.sub)
     try{
@@ -230,17 +231,6 @@ export const cancelOrder = async (req, res) => {
 // ==============================
 // ADMIN
 // ==============================
-export const ORDER_STATUSES = ["pending", "confirmed", "shipped", "delivered", "cancelled"]
-
-// Which status each status may move to. Anything not listed is rejected.
-const NEXT_STATUS = {
-    pending: ["confirmed", "cancelled"],
-    confirmed: ["shipped", "cancelled"],
-    shipped: ["delivered"],
-    delivered: [],
-    cancelled: [],
-}
-
 // GET /admin/orders?status=pending&page=1&limit=20
 export const listAllOrders = async (req, res) => {
     const page = req.query.page !== undefined ? Number(req.query.page) : 1
@@ -290,7 +280,7 @@ export const updateOrderStatus = async (req, res) => {
         const updated = await prisma.$transaction(async (tx) => {
             const order = await tx.order.findUnique({ where: { id: order_id }, include: { items: true } })
             if (!order) throw new Error("ORDER_NOT_FOUND")
-            if (!NEXT_STATUS[order.status]?.includes(status)) throw new Error(`BAD_TRANSITION:${order.status}`)
+            if (!canTransition(order.status, status)) throw new Error(`BAD_TRANSITION:${order.status}`)
 
             const next = await tx.order.update({ where: { id: order.id }, data: { status } })
 

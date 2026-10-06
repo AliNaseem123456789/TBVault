@@ -1,12 +1,11 @@
 import api from "./apiClient";
 
 /**
- * Categories API. Mirrors products.api.js / auth.api.js.
+ * Categories API.
  *
- * Backend note: GET /categories returns [{ id, name, created_at }]
- * — no product count yet. GET /categories/:id/products currently
- * uses findMany (not findUnique) so it resolves to a one-element
- * array; unwrap it as data[0]?.products when that endpoint is used.
+ *   GET /categories               -> [{ id, name, created_at, _count: { products } }]
+ *                                    (_count only counts visible products)
+ *   GET /categories/:id/products  -> { id, name, products: [...] } (visible products only)
  */
 
 export const getCategories = async () => {

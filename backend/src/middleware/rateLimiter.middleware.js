@@ -3,8 +3,6 @@ import redis from "../config/redis.client.js";
 export const loginRateLimiter = async (req, res, next) => {
   const ipAddress = req.ip;
   const key = `rate_limit:login:${ipAddress}`;
- console.log("ran redis")
- console.log(key)
   try {
     const count = await redis.incr(key);
     if (count === 1) {
