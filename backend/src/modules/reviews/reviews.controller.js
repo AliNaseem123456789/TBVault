@@ -32,14 +32,14 @@ export const getProductReviews = async (req, res) => {
 
         const [reviews, stats, breakdown] = await Promise.all([
             prisma.review.findMany({
-                where: { product_id: productId },
+                where: { product_id: productId, is_hidden: false },
                 orderBy: { created_at: "desc" },
                 skip: (page - 1) * limit,
                 take: limit,
                 select: REVIEW_SELECT,
             }),
-            prisma.review.aggregate({ where: { product_id: productId }, _avg: { rating: true }, _count: true }),
-            prisma.review.groupBy({ by: ["rating"], where: { product_id: productId }, _count: true }),
+            prisma.review.aggregate({ where: { product_id: productId, is_hidden: false }, _avg: { rating: true }, _count: true }),
+            prisma.review.groupBy({ by: ["rating"], where: { product_id: productId, is_hidden: false }, _count: true }),
         ])
 
         const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
@@ -173,7 +173,7 @@ export const getFeaturedReviews = async (req, res) => {
     if (!Number.isInteger(limit) || limit < 1 || limit > 20) return res.status(400).json({ message: "invalid limit" })
     try {
         const reviews = await prisma.review.findMany({
-            where: { rating: { gte: 4 }, comment: { not: null }, product: { is_hidden: false } },
+            where: { rating: { gte: 4 }, comment: { not: null }, is_hidden: false, product: { is_hidden: false } },
             orderBy: { created_at: "desc" },
             take: limit,
             select: { ...REVIEW_SELECT, product: { select: { id: true, name: true } } },
@@ -181,6 +181,77 @@ export const getFeaturedReviews = async (req, res) => {
         return res.status(200).json({ message: "Reviews fetched", data: { reviews } })
     } catch (err) {
         console.error("getFeaturedReviews error:", err)
+        return res.status(500).json({ message: "Database Error" })
+    }
+}
+
+// ==============================
+// ADMIN MODERATION
+// ==============================
+
+// GET /admin/reviews?visibility=hidden|visible&rating=1&search=text&page=1&limit=20
+export const listReviewsAdmin = async (req, res) => {
+    const page = req.query.page !== undefined ? Number(req.query.page) : 1
+    const limit = req.query.limit !== undefined ? Number(req.query.limit) : 20
+    if (!Number.isInteger(page) || page < 1) return res.status(400).json({ message: "invalid page" })
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) return res.status(400).json({ message: "invalid limit" })
+
+    const where = {}
+    if (req.query.visibility === "hidden") where.is_hidden = true
+    else if (req.query.visibility === "visible") where.is_hidden = false
+    else if (req.query.visibility !== undefined) return res.status(400).json({ message: "visibility must be hidden or visible" })
+    if (req.query.rating !== undefined) {
+        const rating = Number(req.query.rating)
+        if (!Number.isInteger(rating) || rating < 1 || rating > 5) return res.status(400).json({ message: "invalid rating" })
+        where.rating = rating
+    }
+    const search = typeof req.query.search === "string" ? req.query.search.trim() : ""
+    if (search) {
+        where.OR = [
+            { comment: { contains: search, mode: "insensitive" } },
+            { product: { name: { contains: search, mode: "insensitive" } } },
+            { user: { email: { contains: search, mode: "insensitive" } } },
+        ]
+    }
+    try {
+        const [reviews, totalItems] = await Promise.all([
+            prisma.review.findMany({
+                where,
+                orderBy: { created_at: "desc" },
+                skip: (page - 1) * limit,
+                take: limit,
+                include: { user: { select: { id: true, name: true, email: true } }, product: { select: { id: true, name: true } } },
+            }),
+            prisma.review.count({ where }),
+        ])
+        const totalPages = Math.ceil(totalItems / limit)
+        return res.status(200).json({
+            message: "Reviews fetched",
+            data: { reviews },
+            metaData: { totalPages, currentPage: page, hasNext: totalPages > page, hasPrev: page > 1, itemsPerPage: limit, totalItems },
+        })
+    } catch (err) {
+        console.error("listReviewsAdmin error:", err)
+        return res.status(500).json({ message: "Database Error" })
+    }
+}
+
+// PATCH /admin/reviews/:reviewId/visibility   body: { is_hidden }
+// Hidden reviews disappear from the product page and the rating average.
+export const setReviewVisibility = async (req, res) => {
+    const reviewId = parseId(req.params.reviewId)
+    if (!reviewId) return res.status(400).json({ message: "invalid review id" })
+    if (typeof req.body.is_hidden !== "boolean") return res.status(400).json({ message: "is_hidden must be true or false" })
+    try {
+        const review = await prisma.review.update({
+            where: { id: reviewId },
+            data: { is_hidden: req.body.is_hidden, moderated_at: new Date() },
+            select: { ...REVIEW_SELECT, is_hidden: true, moderated_at: true },
+        })
+        return res.status(200).json({ message: req.body.is_hidden ? "Review hidden" : "Review published", data: { review } })
+    } catch (err) {
+        if (err.code === "P2025") return res.status(404).json({ message: "Review not found" })
+        console.error("setReviewVisibility error:", err)
         return res.status(500).json({ message: "Database Error" })
     }
 }

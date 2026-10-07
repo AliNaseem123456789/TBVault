@@ -16,7 +16,7 @@ import {
     changePassword,
 } from "./auth.controller.js"
 import { authenticate } from "../../middleware/auth.middleware.js"
-import { loginRateLimiter } from "../../middleware/rateLimiter.middleware.js"
+import { loginRateLimiter, rateLimit } from "../../middleware/rateLimiter.middleware.js"
 
 const router = Router()
 
@@ -26,9 +26,16 @@ router.post("/logout", logout)
 router.post("/logout-all", logoutAll)
 router.post("/refresh", refresh)
 
-router.post("/forgot-password", forgotPassword)
+// Per email (stops someone flooding one inbox) and per IP (stops sweeping many addresses).
+const forgotPasswordLimiters = [
+    rateLimit({ name: "forgot-password-ip", max: 10, windowSec: 60 * 60 }),
+    rateLimit({ name: "forgot-password-email", max: 3, windowSec: 60 * 60, keyFn: (req) => typeof req.body?.email === "string" ? req.body.email.trim() : null }),
+]
+const verifyEmailLimiter = rateLimit({ name: "verify-email", max: 5, windowSec: 60 * 60, keyFn: (req) => req.user?.sub })
+
+router.post("/forgot-password", forgotPasswordLimiters, forgotPassword)
 router.post("/reset-password", resetPassword)
-router.post("/verify-email", authenticate, verifyEmail)
+router.post("/verify-email", authenticate, verifyEmailLimiter, verifyEmail)
 router.post("/confirm-email", confirmEmail)
 
 router.get("/me", authenticate, me)

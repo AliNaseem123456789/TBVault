@@ -12,6 +12,7 @@ import {
     getProductByIdAdmin,
     deleteProductImage,
     setPrimaryImage,
+    getRelatedProducts,
 } from "./products.controller.js";
 
 const router = Router()
@@ -19,6 +20,7 @@ const router = Router()
 // Public storefront (hidden products are filtered out)
 router.get("/products", getProductsByCategory)
 router.get("/products/:id", getProductsById)
+router.get("/products/:id/related", getRelatedProducts)
 
 // Admin only
 router.get("/admin/products", requireAdmin, getProductsAdmin)

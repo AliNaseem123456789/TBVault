@@ -1,6 +1,6 @@
 import amqp from "amqplib";
 
-export const EXCHANGES = { AUTH: "auth.events", ORDER: "order.events" };
+export const EXCHANGES = { AUTH: "auth.events", ORDER: "order.events", INVENTORY: "inventory.events" };
 
 let connection;
 let channel;
@@ -16,6 +16,7 @@ export async function connectRabbitMQ() {
     channel = await connection.createChannel();
     await channel.assertExchange(EXCHANGES.AUTH, "topic", { durable: true });
     await channel.assertExchange(EXCHANGES.ORDER, "topic", { durable: true });
+    await channel.assertExchange(EXCHANGES.INVENTORY, "topic", { durable: true });
     console.log("Connected to RabbitMQ");
     return channel;
 }

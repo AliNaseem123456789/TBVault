@@ -15,6 +15,10 @@ const BINDINGS = [
     [EXCHANGES.AUTH, "auth.email.verification.requested"],
     [EXCHANGES.ORDER, "order.created"],
     [EXCHANGES.ORDER, "order.status.changed"],
+    [EXCHANGES.ORDER, "order.refunded"],
+    [EXCHANGES.ORDER, "order.return.updated"],
+    [EXCHANGES.INVENTORY, "inventory.low_stock"],
+    [EXCHANGES.INVENTORY, "inventory.back_in_stock"],
 ];
 
 // The old queue name. Removed only if empty, on a throwaway channel so a

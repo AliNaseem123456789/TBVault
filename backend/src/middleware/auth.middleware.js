@@ -14,6 +14,20 @@ export const authenticate = (req, res, next) => {
     }
 };
 
+// Like authenticate, but lets anonymous requests through (req.user stays undefined).
+// Used by routes that work for both guests and signed-in customers, e.g. checkout.
+export const optionalAuthenticate = (req, res, next) => {
+    const authHeader = req.headers["authorization"];
+    if (!authHeader || !authHeader.startsWith("Bearer ")) return next();
+    try {
+        req.user = verifyAccessToken(authHeader.split(" ")[1]);
+        next();
+    } catch (err) {
+        // A stale token should make the client refresh, not silently become a guest.
+        return res.status(401).json({ message: "Not authenticated" });
+    }
+};
+
 export const authorize = (...allowedRoles) => {
     return (req, res, next) => {
         if (!req.user || !req.user.role) {

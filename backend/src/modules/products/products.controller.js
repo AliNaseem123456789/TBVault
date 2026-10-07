@@ -3,6 +3,8 @@ import { PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import storage, { BUCKET } from "../../config/storage.js";
 import path from "path"
 import crypto from "crypto";
+import { withSalePricing } from "../../services/pricing/pricing.service.js";
+import { notifyBackInStock } from "../../services/inventory/inventory.service.js";
 import { parseProductInput } from "./product.validation.js";
 
 
@@ -76,18 +78,24 @@ export const getProductsByCategory = async (req, res, { includeHidden = false } 
     return res.status(400).json({message: "minPrice cannot be greater than maxPrice"});
   }
   // Stock validation
+  // A product with options is in stock when any active option is.
   let stockFilter;
   if (inStock !== undefined) {
+    const variantInStock = { variants: { some: { is_active: true, stock: { gt: 0 } } } };
     if (inStock === "true") {
-      stockFilter = {
-        gt: 0
-      };
+      stockFilter = { OR: [{ stock: { gt: 0 } }, variantInStock] };
     } else if (inStock === "false") {
-      stockFilter = {
-        equals: 0
-      };
+      stockFilter = { stock: { lte: 0 }, NOT: variantInStock };
     } else {
       return res.status(400).json({message: "inStock must be true or false"});
+    }
+  }
+  // ids=3,8,12 — e.g. the "recently viewed" strip. At most 50.
+  let ids;
+  if (req.query.ids !== undefined) {
+    ids = String(req.query.ids).split(",").filter(Boolean).map(Number);
+    if (ids.length === 0 || ids.length > 50 || ids.some((n) => !Number.isInteger(n) || n < 1)) {
+      return res.status(400).json({message: "ids must be a comma-separated list of up to 50 product ids"});
     }
   }
   // Sorting validation
@@ -149,7 +157,10 @@ export const getProductsByCategory = async (req, res, { includeHidden = false } 
   }
 
   if (stockFilter !== undefined) {
-    where.stock = stockFilter;
+    where.AND = [...(where.AND ?? []), stockFilter];
+  }
+  if (ids !== undefined) {
+    where.id = { in: ids };
   }
   // Sorting
   const finalSortBy = sortBy || "created_at";
@@ -171,7 +182,13 @@ export const getProductsByCategory = async (req, res, { includeHidden = false } 
             { is_primary: "desc" },     
             { created_at: "asc" },       
                  ],
-                take: 2,}
+                take: 2,},
+          // Enough to show "from $x" and whether any option is in stock.
+          variants: {
+            where: includeHidden ? {} : { is_active: true },
+            select: { id: true, name: true, price: true, stock: true, is_active: true },
+            orderBy: [{ sort_order: "asc" }, { id: "asc" }],
+          }
         },
         orderBy: {
           [finalSortBy]: finalOrder
@@ -192,7 +209,7 @@ export const getProductsByCategory = async (req, res, { includeHidden = false } 
       message: "Products Found",
 
       data: {
-        products
+        products: await withSalePricing(products)
       },
 
       metaData: {
@@ -225,14 +242,18 @@ export const getProductsById=async(req,res,{ includeHidden = false } = {})=>{
                 where:{id:id},
                 include:{
                     images:{orderBy:[{is_primary:"desc"},{created_at:"asc"}]},
-                    category:{select:{id:true,name:true}}
+                    category:{select:{id:true,name:true}},
+                    variants:{
+                        where: includeHidden ? {} : { is_active: true },
+                        orderBy:[{sort_order:"asc"},{id:"asc"}],
+                    },
                 }
             }
         )
         if (!product || (product.is_hidden && !includeHidden)) {
          return res.status(404).json({ message: "Product not found" });
             }
-        return res.status(200).json({message:"product found",data:{product}})
+        return res.status(200).json({message:"product found",data:{product: await withSalePricing(product)}})
     }catch(err){
     console.error("getProductsById error:",err)
     return res.status(500).json({message:"Database Error"})
@@ -246,7 +267,10 @@ export const updateProductsById=async(req,res)=>{
     const { data, error } = parseProductInput(req.body, { partial: true })
     if (error) return res.status(400).json({ message: error })
      try{
+        const before=await prisma.product.findUnique({where:{id:id},select:{stock:true}})
         const product=await prisma.product.update({where:{id:id},data})
+        // Restocked from zero: tell everyone who asked to be notified.
+        if(before && before.stock<=0 && product.stock>0) notifyBackInStock({productId:id,variantId:null})
         return res.status(200).json({message:"product found",data:{product}})
     }catch(err){
         if(err.code==="P2025"){
@@ -449,6 +473,44 @@ export const setPrimaryImage = async (req, res) => {
     return res.status(200).json({ message: "Primary image updated" });
   } catch (err) {
     console.error("setPrimaryImage error:", err);
+    return res.status(500).json({ message: "Database Error" });
+  }
+};
+
+// GET /products/:id/related?limit=4
+// Same category first, then the newest other products to fill the row.
+export const getRelatedProducts = async (req, res) => {
+  const id = Number(req.params.id);
+  const limit = req.query.limit !== undefined ? Number(req.query.limit) : 4;
+  if (!Number.isInteger(id) || id < 1) return res.status(400).json({ message: "invalid product id" });
+  if (!Number.isInteger(limit) || limit < 1 || limit > 12) return res.status(400).json({ message: "invalid limit" });
+  const include = {
+    category: { select: { id: true, name: true } },
+    images: { orderBy: [{ is_primary: "desc" }, { created_at: "asc" }], take: 2 },
+    variants: { where: { is_active: true }, select: { id: true, name: true, price: true, stock: true, is_active: true } },
+  };
+  try {
+    const product = await prisma.product.findUnique({ where: { id }, select: { category_id: true, is_hidden: true } });
+    if (!product || product.is_hidden) return res.status(404).json({ message: "Product not found" });
+    const sameCategory = await prisma.product.findMany({
+      where: { category_id: product.category_id, is_hidden: false, id: { not: id } },
+      orderBy: { created_at: "desc" },
+      take: limit,
+      include,
+    });
+    let related = sameCategory;
+    if (related.length < limit) {
+      const others = await prisma.product.findMany({
+        where: { is_hidden: false, id: { notIn: [id, ...related.map((p) => p.id)] } },
+        orderBy: { created_at: "desc" },
+        take: limit - related.length,
+        include,
+      });
+      related = [...related, ...others];
+    }
+    return res.status(200).json({ message: "Related products", data: { products: await withSalePricing(related) } });
+  } catch (err) {
+    console.error("getRelatedProducts error:", err);
     return res.status(500).json({ message: "Database Error" });
   }
 };

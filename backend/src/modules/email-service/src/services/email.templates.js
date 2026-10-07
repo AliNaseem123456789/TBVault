@@ -30,6 +30,27 @@ const STATUS_COPY = {
   cancelled: { subject: "cancelled", line: "Your order has been cancelled. If you didn't expect this, reply to this email." },
 };
 
+const RETURN_COPY = {
+  REQUESTED: "We've received your return request and will review it shortly.",
+  APPROVED: "Your return is approved. Please send the items back; reply to this email if you need the return address.",
+  REJECTED: "We couldn't accept this return.",
+  RECEIVED: "We've received the items you sent back.",
+  REFUNDED: "Your return is complete and the refund has been issued.",
+};
+
+const money = (value) => `$${esc(value)}`;
+const totalsTable = ({ subtotal, discountTotal, shippingTotal, taxTotal, totalAmount, couponCode }) => {
+  const row = (label, value, bold = false) =>
+    `<tr><td style="padding:4px 0">${label}</td><td style="padding:4px 0;text-align:right${bold ? ";font-weight:bold" : ""}">${value}</td></tr>`;
+  return `<table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:8px">
+    ${subtotal ? row("Subtotal", money(subtotal)) : ""}
+    ${Number(discountTotal) > 0 ? row(`Discount${couponCode ? ` (${esc(couponCode)})` : ""}`, `−${money(discountTotal)}`) : ""}
+    ${shippingTotal !== undefined ? row("Shipping", Number(shippingTotal) > 0 ? money(shippingTotal) : "Free") : ""}
+    ${Number(taxTotal) > 0 ? row("Tax", money(taxTotal)) : ""}
+    ${row("Total", money(totalAmount), true)}
+  </table>`;
+};
+
 export const templates = {
   resetPassword: ({ resetUrl }) => ({
     subject: "Reset your password",
@@ -49,33 +70,95 @@ export const templates = {
     text: `Verify your email: ${verifyUrl}\nExpires in 24 hours.`,
   }),
 
-  orderPlaced: ({ orderId, name, items, totalAmount, shippingAddress, orderUrl }) => ({
-    subject: `Order #${orderId} received`,
-    html: layout(
-      `
-      <h2>Thanks for your order${name ? `, ${esc(name)}` : ""}!</h2>
-      <p>We've received order <strong>#${esc(orderId)}</strong>. Payment is due on delivery.</p>
-      ${itemsTable(items)}
-      <p style="text-align:right;font-weight:bold">Total: $${esc(totalAmount)}</p>
-      ${shippingAddress ? `<p style="white-space:pre-line;color:#555">Shipping to:<br>${esc(shippingAddress)}</p>` : ""}
-      <p><a href="${esc(orderUrl)}">View your order</a></p>`,
-      "You're receiving this because you placed an order."
-    ),
-    text: `Thanks for your order #${orderId}.\n\n${itemsText(items)}\n\nTotal: $${totalAmount}\n\nView it: ${orderUrl}`,
-  }),
+  orderPlaced: ({ orderId, name, items, subtotal, discountTotal, shippingTotal, taxTotal, totalAmount, couponCode, paymentMethod, shippingAddress, orderUrl }) => {
+    const paidByCard = paymentMethod === "card";
+    return {
+      subject: `Order #${orderId} ${paidByCard ? "confirmed" : "received"}`,
+      html: layout(
+        `
+        <h2>Thanks for your order${name ? `, ${esc(name)}` : ""}!</h2>
+        <p>${paidByCard ? `We've received your payment for order <strong>#${esc(orderId)}</strong>.` : `We've received order <strong>#${esc(orderId)}</strong>. Payment is due on delivery.`}</p>
+        ${itemsTable(items)}
+        ${totalsTable({ subtotal, discountTotal, shippingTotal, taxTotal, totalAmount, couponCode })}
+        ${shippingAddress ? `<p style="white-space:pre-line;color:#555">Shipping to:<br>${esc(shippingAddress)}</p>` : ""}
+        <p><a href="${esc(orderUrl)}">View or track your order</a></p>`,
+        "You're receiving this because you placed an order."
+      ),
+      text: `Thanks for your order #${orderId}.\n\n${itemsText(items)}\n\nTotal: $${totalAmount}${paidByCard ? " (paid by card)" : " (pay on delivery)"}\n\nView it: ${orderUrl}`,
+    };
+  },
 
-  orderStatus: ({ orderId, status, orderUrl }) => {
+  orderStatus: ({ orderId, status, orderUrl, trackingCarrier, trackingNumber, trackingUrl }) => {
     const copy = STATUS_COPY[status] ?? { subject: `updated (${status})`, line: `Your order status is now: ${status}.` };
+    const tracking = status === "shipped" && (trackingNumber || trackingUrl);
+    const trackingHtml = tracking
+      ? `<p>${trackingCarrier ? `${esc(trackingCarrier)} tracking` : "Tracking"}${trackingNumber ? `: <strong>${esc(trackingNumber)}</strong>` : ""}${trackingUrl ? ` · <a href="${esc(trackingUrl)}">Track the parcel</a>` : ""}</p>`
+      : "";
     return {
       subject: `Order #${orderId} ${copy.subject}`,
       html: layout(
         `
         <h2>Order #${esc(orderId)} ${esc(copy.subject)}</h2>
         <p>${esc(copy.line)}</p>
+        ${trackingHtml}
         <p><a href="${esc(orderUrl)}">View your order</a></p>`,
         "You're receiving this because you placed an order."
       ),
-      text: `Order #${orderId} ${copy.subject}. ${copy.line}\n\nView it: ${orderUrl}`,
+      text: `Order #${orderId} ${copy.subject}. ${copy.line}${tracking ? `\nTracking: ${[trackingCarrier, trackingNumber, trackingUrl].filter(Boolean).join(" ")}` : ""}\n\nView it: ${orderUrl}`,
     };
   },
+
+  orderRefunded: ({ orderId, refundAmount, paymentMethod, orderUrl }) => ({
+    subject: `Refund for order #${orderId}`,
+    html: layout(
+      `
+      <h2>We've refunded $${esc(refundAmount)}</h2>
+      <p>${paymentMethod === "card" ? "The money is on its way back to your card. Banks usually show it within 5-10 business days." : "We'll return the money to you directly."}</p>
+      <p><a href="${esc(orderUrl)}">View order #${esc(orderId)}</a></p>`,
+      "You're receiving this because you placed an order."
+    ),
+    text: `We've refunded $${refundAmount} for order #${orderId}.\n\nView it: ${orderUrl}`,
+  }),
+
+  returnUpdate: ({ orderId, returnId, returnStatus, adminNote, refundAmount, orderUrl }) => {
+    const copy = RETURN_COPY[returnStatus] ?? `Your return is now ${String(returnStatus).toLowerCase()}.`;
+    return {
+      subject: `Return #${returnId} for order #${orderId}: ${String(returnStatus).toLowerCase()}`,
+      html: layout(
+        `
+        <h2>Return #${esc(returnId)} ${esc(String(returnStatus).toLowerCase())}</h2>
+        <p>${esc(copy)}</p>
+        ${refundAmount ? `<p>Refund: <strong>$${esc(refundAmount)}</strong></p>` : ""}
+        ${adminNote ? `<p style="color:#555">Note from us: ${esc(adminNote)}</p>` : ""}
+        <p><a href="${esc(orderUrl)}">View order #${esc(orderId)}</a></p>`,
+        "You're receiving this because you requested a return."
+      ),
+      text: `Return #${returnId} for order #${orderId}: ${copy}${refundAmount ? ` Refund: $${refundAmount}.` : ""}${adminNote ? `\nNote: ${adminNote}` : ""}\n\nView it: ${orderUrl}`,
+    };
+  },
+
+  lowStock: ({ items, threshold, adminUrl }) => ({
+    subject: `Low stock: ${items.length === 1 ? items[0].name : `${items.length} products`}`,
+    html: layout(
+      `
+      <h2>Running low</h2>
+      <p>These are at or below your low-stock threshold of ${esc(threshold)}:</p>
+      <ul>${items.map((i) => `<li>${esc(i.name)}: <strong>${esc(i.stock)}</strong> left</li>`).join("")}</ul>
+      <p><a href="${esc(adminUrl)}">Open the admin dashboard</a></p>`,
+      "You're receiving this as a TBVault store admin."
+    ),
+    text: `Low stock (threshold ${threshold}):\n${items.map((i) => `- ${i.name}: ${i.stock} left`).join("\n")}\n\n${adminUrl}`,
+  }),
+
+  backInStock: ({ productName, productUrl }) => ({
+    subject: `${productName} is back in stock`,
+    html: layout(
+      `
+      <h2>It's back!</h2>
+      <p><strong>${esc(productName)}</strong> is back in stock. Quantities may be limited.</p>
+      <p><a href="${esc(productUrl)}">Shop it now</a></p>`,
+      "You asked us to email you when this was back in stock."
+    ),
+    text: `${productName} is back in stock: ${productUrl}`,
+  }),
 };

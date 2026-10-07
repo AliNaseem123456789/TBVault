@@ -1,4 +1,5 @@
 import prisma from "../../config/db.js"
+import { withSalePricing } from "../../services/pricing/pricing.service.js"
 
 const parseId = (value) => {
     const id = Number(value)
@@ -95,6 +96,7 @@ export const getProductsByCategory = async (req, res) => {
             },
         })
         if (!category) return res.status(404).json({ message: "Category not found" })
+        category.products = await withSalePricing(category.products)
         return res.status(200).json({ message: "Category fetched", data: category })
     } catch (err) {
         console.error("getProductsByCategory error:", err)

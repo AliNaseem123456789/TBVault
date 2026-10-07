@@ -10,6 +10,7 @@ export async function connectRabbitMQ() {
 
     await channel.assertExchange(EXCHANGES.AUTH, "topic", { durable: true })
     await channel.assertExchange(EXCHANGES.ORDER, "topic", { durable: true })
+    await channel.assertExchange(EXCHANGES.INVENTORY, "topic", { durable: true })
 
     connection.on("error", (err) => console.error("[rabbitmq] connection error:", err.message))
     connection.on("close", () => { channel = null; console.error("[rabbitmq] connection closed") })
@@ -23,6 +24,11 @@ export function getRabbitMQChannel(){
         throw new Error("Rabbitmq channel not initialized")
     }
     return channel;
+}
+
+// Tests run without a broker: they hand in a stand-in channel that records publishes.
+export function setRabbitMQChannel(testChannel){
+    channel = testChannel
 }
 
 export async function closeRabbitMQ() {

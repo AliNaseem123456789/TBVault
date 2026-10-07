@@ -83,6 +83,8 @@ model User {
   password    String?  @db.VarChar(255)   // ← changed from required to optional
   is_verified Boolean  @default(false)
   role        UserRole @default(CUSTOMER)
+  is_blocked  Boolean  @default(false)
+  blocked_at  DateTime?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
   cart                       Cart?
@@ -92,6 +94,11 @@ model User {
   email_verification_tokens  EmailVerificationToken[]
   oauth_accounts              OAuthAccount[]
   reviews                     Review[]
+  addresses                   Address[]
+  wishlist_items              WishlistItem[]
+  coupon_redemptions          CouponRedemption[]
+  return_requests             ReturnRequest[]
+  stock_notifications         StockNotification[]
   @@map("users")
 }
 model OAuthAccount {
@@ -109,7 +116,7 @@ model OAuthAccount {
   @@index([user_id])
   @@map("oauth_accounts")
 }
-// ==================+============
+// ==============================
 // PRODUCTS
 // ==============================
 model Category {
@@ -118,6 +125,7 @@ model Category {
   created_at DateTime  @default(now())
 
   products   Product[]
+  sales      Sale[]
 
   @@map("categories")
 }
@@ -135,10 +143,14 @@ model Product {
   category_id Int
   category    Category  @relation(fields: [category_id], references: [id])
 
-  reviews     Review[]
-  images      ProductImage[]
-  cart_items  CartItem[]
-  order_items OrderItem[]
+  reviews             Review[]
+  images              ProductImage[]
+  variants            ProductVariant[]
+  cart_items          CartItem[]
+  order_items         OrderItem[]
+  sales               Sale[]
+  wishlist_items      WishlistItem[]
+  stock_notifications StockNotification[]
 
   @@index([category_id])
   @@index([name])
@@ -146,6 +158,31 @@ model Product {
   @@index([created_at])
   @@map("products")
 }
+
+// A purchasable option of a product (e.g. "Black / M"). When a product has active
+// variants, price and stock come from the variant instead of the product.
+model ProductVariant {
+  id         Int      @id @default(autoincrement())
+  product_id Int
+  name       String   @db.VarChar(100)          // "Black / M", shown to customers
+  sku        String?  @unique @db.VarChar(64)
+  options    Json?                               // { "Color": "Black", "Size": "M" }
+  price      Decimal? @db.Decimal(10, 2)         // null = same as the product
+  stock      Int      @default(0)
+  is_active  Boolean  @default(true)
+  sort_order Int      @default(0)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  product             Product             @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  cart_items          CartItem[]
+  order_items         OrderItem[]
+  stock_notifications StockNotification[]
+
+  @@index([product_id])
+  @@map("product_variants")
+}
+
 model ProductImage {
   id            Int      @id @default(autoincrement())
   product_id    Int
@@ -161,12 +198,15 @@ model ProductImage {
   @@index([product_id])
   @@map("product_images")
 }
+
 model Review {
   id         Int      @id @default(autoincrement())
   product_id Int
   user_id    Int
   rating     Int      // 1-5, validated in reviews.controller.js
   comment    String?  @db.Text
+  is_hidden  Boolean  @default(false)   // hidden by an admin (moderation)
+  moderated_at DateTime?
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
@@ -177,6 +217,59 @@ model Review {
   @@index([product_id])
   @@index([user_id])
   @@map("reviews")
+}
+
+// A timed percentage discount on one product or a whole category.
+model Sale {
+  id          Int       @id @default(autoincrement())
+  name        String    @db.VarChar(100)
+  percent_off Int                              // 1-90
+  product_id  Int?
+  category_id Int?
+  starts_at   DateTime
+  ends_at     DateTime
+  is_active   Boolean   @default(true)
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  product     Product?  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  category    Category? @relation(fields: [category_id], references: [id], onDelete: Cascade)
+
+  @@index([product_id])
+  @@index([category_id])
+  @@index([starts_at, ends_at])
+  @@map("sales")
+}
+
+model WishlistItem {
+  id         Int      @id @default(autoincrement())
+  user_id    Int
+  product_id Int
+  created_at DateTime @default(now())
+
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, product_id])
+  @@map("wishlist_items")
+}
+
+// "Email me when it's back in stock."
+model StockNotification {
+  id          Int       @id @default(autoincrement())
+  product_id  Int
+  variant_id  Int?
+  user_id     Int?
+  email       String    @db.VarChar(255)
+  notified_at DateTime?
+  created_at  DateTime  @default(now())
+
+  product     Product         @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  variant     ProductVariant? @relation(fields: [variant_id], references: [id], onDelete: Cascade)
+  user        User?           @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([product_id, variant_id])
+  @@map("stock_notifications")
 }
 
 // ==============================
@@ -195,22 +288,123 @@ model Cart {
   @@map("cart")
 }
 
-// ==============================
-// CART ITEMS
-// ==============================
 model CartItem {
   id          Int      @id @default(autoincrement())
   cart_id     Int
   product_id  Int
+  variant_id  Int?
   quantity    Int      @default(1)
   created_at  DateTime @default(now())
 
   // Relationships
-  cart        Cart     @relation(fields: [cart_id], references: [id], onDelete: Cascade)
-  product     Product  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  cart        Cart            @relation(fields: [cart_id], references: [id], onDelete: Cascade)
+  product     Product         @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  variant     ProductVariant? @relation(fields: [variant_id], references: [id], onDelete: Cascade)
 
-  @@unique([cart_id, product_id])
+  @@index([cart_id, product_id])
   @@map("cart_items")
+}
+
+// ==============================
+// CUSTOMERS
+// ==============================
+model Address {
+  id          Int      @id @default(autoincrement())
+  user_id     Int
+  label       String?  @db.VarChar(50)     // "Home", "Office"
+  full_name   String   @db.VarChar(100)
+  phone       String   @db.VarChar(30)
+  line1       String   @db.VarChar(200)
+  line2       String?  @db.VarChar(200)
+  city        String   @db.VarChar(100)
+  state       String?  @db.VarChar(100)
+  postal_code String?  @db.VarChar(20)
+  country     String   @db.VarChar(100)
+  is_default  Boolean  @default(false)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  user        User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("addresses")
+}
+
+// ==============================
+// STORE SETTINGS
+// ==============================
+// Simple key/value settings (tax rate, low-stock threshold, alert email...).
+// Defaults live in src/services/settings/settings.service.js.
+model Setting {
+  key        String   @id @db.VarChar(64)
+  value      String   @db.Text
+  updated_at DateTime @updatedAt
+
+  @@map("settings")
+}
+
+// Shipping price by region. An address matches a zone when its city, state or
+// country is in `regions`; otherwise the default zone applies.
+model ShippingZone {
+  id         Int      @id @default(autoincrement())
+  name       String   @db.VarChar(100)
+  regions    String[]                          // lower-case city / state / country names
+  rate       Decimal  @db.Decimal(10, 2)
+  free_over  Decimal? @db.Decimal(10, 2)       // free shipping when the discounted subtotal reaches this
+  is_default Boolean  @default(false)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@map("shipping_zones")
+}
+
+// ==============================
+// COUPONS
+// ==============================
+enum CouponType {
+  PERCENT
+  FIXED
+  FREE_SHIPPING
+}
+
+model Coupon {
+  id               Int        @id @default(autoincrement())
+  code             String     @unique @db.VarChar(40)   // stored upper-case
+  description      String?    @db.VarChar(255)
+  type             CouponType
+  value            Decimal    @default(0) @db.Decimal(10, 2)  // percent (1-100) or amount
+  max_discount     Decimal?   @db.Decimal(10, 2)        // cap for PERCENT coupons
+  min_order_amount Decimal?   @db.Decimal(10, 2)
+  starts_at        DateTime?
+  expires_at       DateTime?
+  usage_limit      Int?                                  // total uses, null = unlimited
+  per_user_limit   Int?                                  // per customer (account or guest email)
+  times_used       Int        @default(0)
+  is_active        Boolean    @default(true)
+  created_at       DateTime   @default(now())
+  updated_at       DateTime   @updatedAt
+
+  redemptions      CouponRedemption[]
+  orders           Order[]
+
+  @@map("coupons")
+}
+
+model CouponRedemption {
+  id              Int      @id @default(autoincrement())
+  coupon_id       Int
+  order_id        Int      @unique
+  user_id         Int?
+  email           String   @db.VarChar(255)
+  discount_amount Decimal  @db.Decimal(10, 2)
+  created_at      DateTime @default(now())
+
+  coupon          Coupon   @relation(fields: [coupon_id], references: [id], onDelete: Cascade)
+  order           Order    @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  user            User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([coupon_id, email])
+  @@map("coupon_redemptions")
 }
 
 // ==============================
@@ -218,36 +412,180 @@ model CartItem {
 // ==============================
 model Order {
   id               Int      @id @default(autoincrement())
-  user_id          Int
+  user_id          Int?                                   // null for guest orders
+  guest_email      String?  @db.VarChar(255)
+  public_token     String   @unique @db.VarChar(64)       // lets guests track their order without an account
   order_date       DateTime @default(now())
   status           String   @default("pending") @db.VarChar(20)
+
+  subtotal         Decimal  @default(0) @db.Decimal(10, 2)
+  discount_total   Decimal  @default(0) @db.Decimal(10, 2)
+  shipping_total   Decimal  @default(0) @db.Decimal(10, 2)
+  tax_total        Decimal  @default(0) @db.Decimal(10, 2)
   total_amount     Decimal  @db.Decimal(10, 2)
+  coupon_id        Int?
+  coupon_code      String?  @db.VarChar(40)
+
+  payment_method   String   @default("cod") @db.VarChar(20)     // cod | card
+  payment_status   String   @default("unpaid") @db.VarChar(20)  // unpaid | paid | partially_refunded | refunded
+  paid_at          DateTime?
+  amount_refunded  Decimal  @default(0) @db.Decimal(10, 2)
+  stripe_checkout_session_id String? @unique @db.VarChar(255)
+  stripe_payment_intent_id   String? @db.VarChar(255)
+
   shipping_address String?  @db.Text
+  tracking_carrier String?  @db.VarChar(100)
+  tracking_number  String?  @db.VarChar(100)
+  tracking_url     String?  @db.VarChar(500)
+  shipped_at       DateTime?
+  delivered_at     DateTime?
+  cancelled_at     DateTime?
+
   created_at       DateTime @default(now())
   updated_at       DateTime @updatedAt
 
   // Relationships
-  user             User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  items            OrderItem[]
+  user               User?               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  coupon             Coupon?             @relation(fields: [coupon_id], references: [id], onDelete: SetNull)
+  items              OrderItem[]
+  status_history     OrderStatusHistory[]
+  coupon_redemption  CouponRedemption?
+  refunds            Refund[]
+  return_requests    ReturnRequest[]
 
+  @@index([user_id])
+  @@index([status])
+  @@index([created_at])
   @@map("orders")
 }
 
-// ==============================
-// ORDER ITEMS
-// ==============================
 model OrderItem {
-  id          Int      @id @default(autoincrement())
-  order_id    Int
-  product_id  Int
-  quantity    Int
-  unit_price  Decimal  @db.Decimal(10, 2)
-  total_price Decimal  @db.Decimal(10, 2)
-  created_at  DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  order_id     Int
+  product_id   Int
+  variant_id   Int?
+  product_name String?  @db.VarChar(100)   // snapshot at purchase time
+  variant_name String?  @db.VarChar(100)
+  quantity     Int
+  unit_price   Decimal  @db.Decimal(10, 2)  // price actually charged per unit (after sales)
+  list_price   Decimal? @db.Decimal(10, 2)  // price before any sale
+  total_price  Decimal  @db.Decimal(10, 2)
+  created_at   DateTime @default(now())
 
   // Relationships
-  order       Order    @relation(fields: [order_id], references: [id], onDelete: Cascade)
-  product     Product  @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  order        Order           @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  product      Product         @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  variant      ProductVariant? @relation(fields: [variant_id], references: [id], onDelete: SetNull)
+  return_items ReturnItem[]
 
   @@map("order_items")
+}
+
+// Every status change, who made it and when. The customer's tracking timeline is built from this.
+model OrderStatusHistory {
+  id            Int      @id @default(autoincrement())
+  order_id      Int
+  from_status   String?  @db.VarChar(20)
+  to_status     String   @db.VarChar(20)
+  note          String?  @db.VarChar(500)
+  actor_type    String   @db.VarChar(20)   // customer | admin | system | payment
+  actor_user_id Int?
+  created_at    DateTime @default(now())
+
+  order         Order    @relation(fields: [order_id], references: [id], onDelete: Cascade)
+
+  @@index([order_id])
+  @@map("order_status_history")
+}
+
+// ==============================
+// PAYMENTS
+// ==============================
+model Refund {
+  id               Int      @id @default(autoincrement())
+  order_id         Int
+  return_id        Int?
+  amount           Decimal  @db.Decimal(10, 2)
+  reason           String?  @db.VarChar(500)
+  method           String   @db.VarChar(20)    // stripe | manual
+  stripe_refund_id String?  @unique @db.VarChar(255)
+  status           String   @db.VarChar(20)    // pending | succeeded | failed
+  created_by       Int?
+  created_at       DateTime @default(now())
+
+  order            Order          @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  return_request   ReturnRequest? @relation(fields: [return_id], references: [id], onDelete: SetNull)
+
+  @@index([order_id])
+  @@map("refunds")
+}
+
+// Stripe webhook events already handled, so a redelivered event is ignored.
+model PaymentEvent {
+  id         String   @id @db.VarChar(255)   // Stripe event id
+  type       String   @db.VarChar(100)
+  created_at DateTime @default(now())
+
+  @@map("payment_events")
+}
+
+// ==============================
+// RETURNS
+// ==============================
+enum ReturnStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  RECEIVED
+  REFUNDED
+}
+
+model ReturnRequest {
+  id            Int          @id @default(autoincrement())
+  order_id      Int
+  user_id       Int?
+  status        ReturnStatus @default(REQUESTED)
+  reason        String       @db.Text
+  admin_note    String?      @db.Text
+  refund_amount Decimal?     @db.Decimal(10, 2)
+  restocked     Boolean      @default(false)
+  created_at    DateTime     @default(now())
+  updated_at    DateTime     @updatedAt
+
+  order         Order        @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  user          User?        @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  items         ReturnItem[]
+  refunds       Refund[]
+
+  @@index([order_id])
+  @@index([status])
+  @@map("return_requests")
+}
+
+model ReturnItem {
+  id            Int           @id @default(autoincrement())
+  return_id     Int
+  order_item_id Int
+  quantity      Int
+
+  return_request ReturnRequest @relation(fields: [return_id], references: [id], onDelete: Cascade)
+  order_item     OrderItem     @relation(fields: [order_item_id], references: [id], onDelete: Cascade)
+
+  @@index([return_id])
+  @@map("return_items")
+}
+
+// ==============================
+// ANALYTICS
+// ==============================
+// One row per browser session per day, for the dashboard's conversion rate.
+model SiteVisit {
+  id         Int      @id @default(autoincrement())
+  visitor_id String   @db.VarChar(64)   // random id kept in the browser, not personal data
+  day        DateTime @db.Date
+  created_at DateTime @default(now())
+
+  @@unique([visitor_id, day])
+  @@index([day])
+  @@map("site_visits")
 }

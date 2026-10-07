@@ -15,7 +15,7 @@ export async function sendEmail(templateName, to, vars = {}) {
   const { subject, html, text } = build(vars);
   try {
     const info = await transporter.sendMail({
-      from: process.env.SMTP_FROM,
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
       to,
       subject,
       html,
@@ -50,3 +50,7 @@ export const sendResetPasswordEmail = (to, resetUrl) => sendEmail("resetPassword
 export const sendVerifyEmail = (to, verifyUrl) => sendEmail("verifyEmail", to, { verifyUrl });
 export const sendOrderPlacedEmail = (to, order) => sendEmail("orderPlaced", to, order);
 export const sendOrderStatusEmail = (to, order) => sendEmail("orderStatus", to, order);
+export const sendOrderRefundedEmail = (to, order) => sendEmail("orderRefunded", to, order);
+export const sendReturnUpdateEmail = (to, order) => sendEmail("returnUpdate", to, order);
+export const sendLowStockEmail = (to, data) => sendEmail("lowStock", to, data);
+export const sendBackInStockEmail = (to, data) => sendEmail("backInStock", to, data);

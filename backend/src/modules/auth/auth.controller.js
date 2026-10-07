@@ -80,6 +80,9 @@ export const login=async(req,res)=>{
       return res.status(401).json({message:"invalid password or email"})  
     }
     await redis.del(key)
+    if(user.is_blocked){
+      return res.status(403).json({message:"This account has been blocked. Please contact support."})
+    }
     const {refreshToken,accessToken}=await createUserSession(user,req) 
     res.cookie("refreshToken",refreshToken,REFRESH_COOKIE)
     res.status(200).json({message:"logged in sucessfully",data:{accessToken}})
@@ -114,6 +117,9 @@ export const refresh = async (req, res) => {
     await prisma.session.update({where: { jti: decoded.jti },data: { revoked_at: new Date() }
 });
 const user = await prisma.user.findUnique({ where: { id: decoded.sub } });
+    if (!user || user.is_blocked) {
+      return res.status(401).json({ message: "not authenticated" });
+    }
     const { accessToken: newAccessToken, refreshToken: newRefreshToken } = await createUserSession(user, req);      res.cookie("refreshToken",newRefreshToken,REFRESH_COOKIE)
     return res.status(200).json({ data: { accessToken:newAccessToken } });
   } catch (err) {
@@ -547,6 +553,10 @@ export const googleCallback = async (req, res) => {
           user_id: user.id,
         },
       })
+    }
+
+    if (user.is_blocked) {
+      return res.redirect(`${process.env.FRONTEND_URL}/login?error=account_blocked`)
     }
 
     // issue YOUR tokens the same way createUserSession does for password login

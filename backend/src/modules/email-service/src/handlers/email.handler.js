@@ -3,6 +3,10 @@ import {
     sendVerifyEmail,
     sendOrderPlacedEmail,
     sendOrderStatusEmail,
+    sendOrderRefundedEmail,
+    sendReturnUpdateEmail,
+    sendLowStockEmail,
+    sendBackInStockEmail,
 } from "../services/email.service.js";
 
 export async function handleEmailEvent(routingKey, data) {
@@ -18,6 +22,20 @@ export async function handleEmailEvent(routingKey, data) {
             break;
         case "order.status.changed":
             await sendOrderStatusEmail(data.email, data);
+            break;
+        case "order.refunded":
+            await sendOrderRefundedEmail(data.email, data);
+            break;
+        case "order.return.updated":
+            await sendReturnUpdateEmail(data.email, data);
+            break;
+        case "inventory.low_stock":
+            // One email to all admins (BCC-free: they're our own staff).
+            await sendLowStockEmail(data.recipients.join(","), data);
+            break;
+        case "inventory.back_in_stock":
+            // The API publishes one message per customer, so a failed send retries just that one.
+            await sendBackInStockEmail(data.email, data);
             break;
         default:
             // Acked and ignored: an unhandled event isn't worth retrying.
