@@ -76,3 +76,8 @@
     border-bottom: 1px solid var(--color-border);
   }
 }
+
+/* Phones: the wishlist lives in the menu, so the header icons fit. */
+@media (max-width: 479px) {
+  .navbar__wishlist { display: none; }
+}

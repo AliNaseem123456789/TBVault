@@ -119,3 +119,8 @@
   margin-bottom: var(--space-3);
 }
 .cart-drawer__checkout { width: 100%; justify-content: center; }
+
+.cart-drawer__item-variant { font-size: var(--text-xs); color: var(--color-ink-muted); }
+.cart-drawer__item-price-old { margin-left: var(--space-2); color: var(--color-ink-faint); font-weight: var(--weight-medium); }
+.cart-drawer__notice { margin-bottom: var(--space-3); }
+.cart-drawer__fine-print { font-size: var(--text-xs); color: var(--color-ink-muted); margin: 0; }

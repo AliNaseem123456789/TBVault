@@ -1,67 +1,170 @@
-import { useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../../features/cart/CartProvider';
-import { createOrder } from '../../api/orders.api';
+import { useAuth } from '../../features/auth/AuthProvider';
+import { useStoreConfig } from '../../features/store/useStoreConfig';
+import { quoteOrder, createOrder, createGuestOrder } from '../../api/orders.api';
+import { getAddresses, createAddress } from '../../api/addresses.api';
 import { getImageUrl } from '../../utils/product';
+import { formatMoney } from '../../utils/money';
+import AddressForm from '../../features/addresses/AddressForm';
+import { EMPTY_ADDRESS } from '../../features/addresses/emptyAddress';
+import { AddressSummary } from '../../features/addresses/AddressBook';
 import Icon from '../../components/ui/Icon';
 import Button from '../../components/ui/Button';
+import '../../features/addresses/Addresses.css';
 import './Checkout.css';
 
+const NEW_ADDRESS = 'new';
+
 /**
- * /checkout — shipping details + order summary, backed by the real
- * POST /orders. The backend only stores shipping_address as a single
- * text column (see orders.controller.js's commented Order model), so
- * the structured fields below are purely a nicer input experience —
- * they get joined into one string before the request goes out.
+ * /checkout — works for signed-in customers and guests.
  *
- * There's no payment step here: createOrder doesn't touch payment at
- * all (no gateway wired up on the backend yet), so this is a
- * place-order-now / pay-on-delivery-style flow until that's decided.
+ * Every number on this page comes from POST /order/quote, which prices the
+ * cart on the server (sales, coupon, shipping zone for the address, tax).
+ * The browser never computes the total it sends; placing the order re-prices
+ * everything again inside the order transaction.
  *
- * Placing an order sends an Idempotency-Key header (see orders.api.js).
+ * Card payments go to Stripe's hosted page (checkout_url) and come back to
+ * the order page with ?payment=success. Cash on delivery goes straight there.
+ * Each attempt sends an Idempotency-Key, so a double click can't order twice.
  */
 const Checkout = () => {
-  const { items, subtotal, refresh } = useCart();
+  const { items, refresh, clear, isGuest } = useCart();
+  const { user } = useAuth();
+  const config = useStoreConfig();
   const navigate = useNavigate();
 
-  const [form, setForm] = useState({ fullName: '', phone: '', street: '', city: '', postalCode: '' });
+  const [email, setEmail] = useState('');
+  const [addresses, setAddresses] = useState([]);
+  const [addressChoice, setAddressChoice] = useState(NEW_ADDRESS);
+  const [newAddress, setNewAddress] = useState(EMPTY_ADDRESS);
+  const [saveAddress, setSaveAddress] = useState(true);
+  const [paymentMethod, setPaymentMethod] = useState('cod');
+  const [couponInput, setCouponInput] = useState('');
+  const [couponCode, setCouponCode] = useState('');
+
+  const [quote, setQuote] = useState(null);
+  const [quoting, setQuoting] = useState(false);
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState('');
-  // One key per checkout attempt. Retries reuse it, so the server can't create the order twice.
   const idempotencyKey = useRef(crypto.randomUUID());
 
-  const updateField = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+  // Saved addresses: default one pre-selected.
+  useEffect(() => {
+    if (isGuest) return;
+    let alive = true;
+    getAddresses()
+      .then((res) => {
+        if (!alive) return;
+        const list = res?.data?.addresses ?? [];
+        setAddresses(list);
+        if (list.length) setAddressChoice(list[0].id);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [isGuest]);
+
+  const cardEnabled = Boolean(config?.card_payments_enabled);
+
+  // What the quote and the order need to know about the address.
+  const addressPayload = useMemo(() => {
+    if (!isGuest && addressChoice !== NEW_ADDRESS) return { address_id: addressChoice };
+    return { address: newAddress };
+  }, [isGuest, addressChoice, newAddress]);
+
+  // Only the parts that change the price (region and coupon) re-trigger a quote.
+  const quoteKey = JSON.stringify([
+    items.map((i) => [i.product_id, i.variant_id, i.quantity]),
+    addressPayload.address_id ?? [newAddress.city, newAddress.state, newAddress.country],
+    couponCode,
+  ]);
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    let alive = true;
+    const timer = setTimeout(async () => {
+      setQuoting(true);
+      try {
+        const body = {
+          ...(isGuest ? { items: items.map((i) => ({ product_id: i.product_id, variant_id: i.variant_id, quantity: i.quantity })), email } : {}),
+          ...(addressPayload.address_id ? { address_id: addressPayload.address_id } : { address: newAddress }),
+          ...(couponCode ? { coupon_code: couponCode } : {}),
+        };
+        const res = await quoteOrder(body);
+        if (alive) setQuote(res.data);
+      } catch (err) {
+        if (alive) setError(err?.response?.data?.message || 'Could not work out your total');
+      } finally {
+        if (alive) setQuoting(false);
+      }
+    }, 300);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+    // quoteKey covers items, address region and coupon.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteKey]);
+
+  const applyCoupon = (e) => {
+    e.preventDefault();
+    setError('');
+    setCouponCode(couponInput.trim().toUpperCase());
+  };
+
+  const removeCoupon = () => {
+    setCouponCode('');
+    setCouponInput('');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-
-    const shippingAddress = [
-      form.fullName,
-      form.street,
-      [form.city, form.postalCode].filter(Boolean).join(', '),
-      form.phone && `Phone: ${form.phone}`,
-    ]
-      .filter(Boolean)
-      .join('\n');
-
+    if (quote?.problems?.length) {
+      setError(quote.problems[0]);
+      return;
+    }
     setPlacing(true);
     try {
-      const res = await createOrder(shippingAddress, idempotencyKey.current);
-      const orderId = res?.data?.order?.id;
-      refresh?.();
-      if (orderId) {
-        navigate(`/orders/${orderId}`, { state: { justPlaced: true } });
+      const common = {
+        coupon_code: quote?.coupon ? couponCode : undefined,
+        payment_method: paymentMethod,
+      };
+      let res;
+      if (isGuest) {
+        res = await createGuestOrder(
+          { ...common, email, address: newAddress, items: items.map((i) => ({ product_id: i.product_id, variant_id: i.variant_id, quantity: i.quantity })) },
+          idempotencyKey.current
+        );
       } else {
-        navigate('/orders');
+        let body = { ...common, ...addressPayload };
+        // Keep a new address for next time when asked to.
+        if (addressChoice === NEW_ADDRESS && saveAddress) {
+          const saved = await createAddress(newAddress);
+          body = { ...common, address_id: saved.data.address.id };
+        }
+        res = await createOrder(body, idempotencyKey.current);
       }
+
+      const { order, checkout_url: checkoutUrl, tracking_token: trackingToken } = res.data;
+      if (isGuest) await clear();
+      else refresh();
+
+      if (checkoutUrl) {
+        window.location.assign(checkoutUrl);
+        return;
+      }
+      if (trackingToken) navigate(`/track/${trackingToken}`, { state: { justPlaced: true } });
+      else navigate(`/orders/${order.id}`, { state: { justPlaced: true } });
     } catch (err) {
       // A 4xx means the server rejected this attempt (and released the key); start fresh next time.
       if (err?.response?.status && err.response.status < 500 && err.response.status !== 409) {
         idempotencyKey.current = crypto.randomUUID();
       }
       setError(err?.response?.data?.message || 'Could not place your order. Please try again.');
-    } finally {
       setPlacing(false);
     }
   };
@@ -77,100 +180,179 @@ const Checkout = () => {
     );
   }
 
+  const totals = quote?.totals;
+  const quoteItems = quote?.items ?? [];
+  const blocked = Boolean(quote?.problems?.length);
+  const payLabel = paymentMethod === 'card' ? 'Continue to payment' : 'Place order';
+
   return (
     <div className="checkout-page container">
       <div className="checkout-page__header">
         <span className="badge badge-secondary">Checkout</span>
-        <h1>Shipping details</h1>
+        <h1>Almost there</h1>
       </div>
 
       <div className="checkout-page__grid">
-        <form className="card checkout-form" onSubmit={handleSubmit}>
-          <div className="field">
-            <label htmlFor="checkout-name">Full name</label>
-            <input
-              id="checkout-name"
-              className="input"
-              value={form.fullName}
-              onChange={updateField('fullName')}
-              required
-            />
-          </div>
+        <form className="checkout-form" onSubmit={handleSubmit}>
+          <section className="card checkout-section">
+            <h2><span className="checkout-section__step">1</span> Contact</h2>
+            {isGuest ? (
+              <>
+                <div className="field">
+                  <label htmlFor="checkout-email">Email</label>
+                  <input
+                    id="checkout-email"
+                    type="email"
+                    className="input"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="For your receipt and tracking link"
+                    required
+                  />
+                </div>
+                <p className="checkout-form__note">
+                  Checking out as a guest. <Link to="/login" state={{ from: '/checkout' }}>Sign in</Link> to use saved addresses — your cart comes with you.
+                </p>
+              </>
+            ) : (
+              <p className="checkout-section__static">{user?.email}</p>
+            )}
+          </section>
 
-          <div className="field">
-            <label htmlFor="checkout-street">Street address</label>
-            <input
-              id="checkout-street"
-              className="input"
-              placeholder="House / flat, street, area"
-              value={form.street}
-              onChange={updateField('street')}
-              required
-            />
-          </div>
+          <section className="card checkout-section">
+            <h2><span className="checkout-section__step">2</span> Shipping address</h2>
+            {!isGuest && addresses.length > 0 && (
+              <ul className="address-picker" role="radiogroup" aria-label="Shipping address">
+                {addresses.map((a) => (
+                  <li key={a.id}>
+                    <label className={`address-picker__option ${addressChoice === a.id ? 'is-selected' : ''}`}>
+                      <input type="radio" name="address" checked={addressChoice === a.id} onChange={() => setAddressChoice(a.id)} />
+                      <AddressSummary address={a} />
+                    </label>
+                  </li>
+                ))}
+                <li>
+                  <label className={`address-picker__option ${addressChoice === NEW_ADDRESS ? 'is-selected' : ''}`}>
+                    <input type="radio" name="address" checked={addressChoice === NEW_ADDRESS} onChange={() => setAddressChoice(NEW_ADDRESS)} />
+                    <span>Use a new address</span>
+                  </label>
+                </li>
+              </ul>
+            )}
+            {(isGuest || addressChoice === NEW_ADDRESS) && (
+              <>
+                <AddressForm idPrefix="checkout" value={newAddress} onChange={setNewAddress} />
+                {!isGuest && (
+                  <label className="address-form__checkbox">
+                    <input type="checkbox" checked={saveAddress} onChange={(e) => setSaveAddress(e.target.checked)} /> Save this address for next time
+                  </label>
+                )}
+              </>
+            )}
+          </section>
 
-          <div className="checkout-form__row">
-            <div className="field">
-              <label htmlFor="checkout-city">City</label>
-              <input id="checkout-city" className="input" value={form.city} onChange={updateField('city')} required />
+          <section className="card checkout-section">
+            <h2><span className="checkout-section__step">3</span> Payment</h2>
+            <div className="payment-options" role="radiogroup" aria-label="Payment method">
+              <label className={`payment-option ${paymentMethod === 'cod' ? 'is-selected' : ''}`}>
+                <input type="radio" name="payment" checked={paymentMethod === 'cod'} onChange={() => setPaymentMethod('cod')} />
+                <Icon name="truck" size={18} />
+                <span>
+                  <strong>Cash on delivery</strong>
+                  <small>Pay when your order arrives.</small>
+                </span>
+              </label>
+              <label className={`payment-option ${paymentMethod === 'card' ? 'is-selected' : ''} ${cardEnabled ? '' : 'is-disabled'}`}>
+                <input type="radio" name="payment" checked={paymentMethod === 'card'} onChange={() => setPaymentMethod('card')} disabled={!cardEnabled} />
+                <Icon name="card" size={18} />
+                <span>
+                  <strong>Card</strong>
+                  <small>{cardEnabled ? 'Secure payment with Stripe.' : 'Not available right now.'}</small>
+                </span>
+              </label>
             </div>
-            <div className="field">
-              <label htmlFor="checkout-postal">Postal code</label>
-              <input
-                id="checkout-postal"
-                className="input"
-                value={form.postalCode}
-                onChange={updateField('postalCode')}
-              />
-            </div>
-          </div>
-
-          <div className="field">
-            <label htmlFor="checkout-phone">Phone number</label>
-            <input
-              id="checkout-phone"
-              type="tel"
-              className="input"
-              placeholder="For delivery updates"
-              value={form.phone}
-              onChange={updateField('phone')}
-              required
-            />
-          </div>
+          </section>
 
           {error && <p className="form-alert form-alert-error">{error}</p>}
 
-          <Button type="submit" size="lg" disabled={placing} className="checkout-form__submit">
-            {placing ? 'Placing order…' : `Place order — $${subtotal.toFixed(2)}`}
+          <Button type="submit" size="lg" disabled={placing || quoting || blocked || !totals} className="checkout-form__submit">
+            {placing ? 'Placing order…' : totals ? `${payLabel} — ${formatMoney(totals.total)}` : 'Working out your total…'}
           </Button>
-          <p className="checkout-form__note">Pay on delivery. You can review your order before it ships.</p>
+          <p className="checkout-form__note">
+            {paymentMethod === 'card'
+              ? "You'll pay on Stripe's secure page, then come back here."
+              : 'You can cancel any time before it ships.'}
+          </p>
         </form>
 
-        <aside className="card checkout-summary">
+        <aside className="card checkout-summary" aria-busy={quoting}>
           <h2>Order summary</h2>
           <ul className="checkout-summary__list">
-            {items.map((item) => {
-              const imageUrl = getImageUrl(item.product?.images?.[0]?.key);
+            {(quoteItems.length ? quoteItems : items.map((i) => ({ product_id: i.product_id, variant_id: i.variant_id, quantity: i.quantity, product_name: i.product?.name, variant_name: i.variant?.name, image_key: i.product?.images?.[0]?.key }))).map((item) => {
+              const imageUrl = getImageUrl(item.image_key);
               return (
-                <li key={item.id} className="checkout-summary__item">
+                <li key={`${item.product_id}:${item.variant_id ?? ''}`} className={`checkout-summary__item ${item.problem ? 'has-problem' : ''}`}>
                   <div className="checkout-summary__thumb">
                     {imageUrl ? <img src={imageUrl} alt="" loading="lazy" /> : <Icon name="image" size={18} />}
                   </div>
                   <div className="checkout-summary__info">
-                    <span className="checkout-summary__name">{item.product?.name}</span>
-                    <span className="checkout-summary__qty">Qty {item.quantity}</span>
+                    <span className="checkout-summary__name">{item.product_name ?? `Product #${item.product_id}`}</span>
+                    <span className="checkout-summary__qty">
+                      {item.variant_name ? `${item.variant_name} · ` : ''}Qty {item.quantity}
+                    </span>
+                    {item.problem && <span className="checkout-summary__problem">{item.problem === 'stock' ? (item.stock > 0 ? `Only ${item.stock} left` : 'Out of stock') : 'Unavailable'}</span>}
                   </div>
                   <span className="checkout-summary__price">
-                    ${(Number(item.product?.price ?? 0) * item.quantity).toFixed(2)}
+                    {item.total_price ? formatMoney(item.total_price) : '—'}
+                    {item.sale_percent && <small className="checkout-summary__sale">-{item.sale_percent}%</small>}
                   </span>
                 </li>
               );
             })}
           </ul>
-          <div className="checkout-summary__total">
-            <span>Total</span>
-            <span>${subtotal.toFixed(2)}</span>
-          </div>
+
+          <form className="checkout-coupon" onSubmit={applyCoupon}>
+            {quote?.coupon ? (
+              <div className="checkout-coupon__applied">
+                <Icon name="tag" size={16} />
+                <span>
+                  <strong>{quote.coupon.code}</strong>
+                  {quote.coupon.description && <small>{quote.coupon.description}</small>}
+                </span>
+                <button type="button" onClick={removeCoupon}>Remove</button>
+              </div>
+            ) : (
+              <>
+                <label htmlFor="coupon" className="visually-hidden">Coupon code</label>
+                <input
+                  id="coupon"
+                  className="input"
+                  placeholder="Coupon code"
+                  value={couponInput}
+                  onChange={(e) => setCouponInput(e.target.value)}
+                  maxLength={40}
+                />
+                <Button type="submit" variant="ghost" disabled={!couponInput.trim()}>Apply</Button>
+              </>
+            )}
+          </form>
+          {couponCode && quote?.coupon_error && <p className="form-alert form-alert-error">{quote.coupon_error}</p>}
+
+          <dl className="checkout-summary__totals">
+            <div><dt>Subtotal</dt><dd>{totals ? formatMoney(totals.subtotal) : '—'}</dd></div>
+            {totals && Number(totals.discount) > 0 && (
+              <div className="is-discount"><dt>Discount</dt><dd>−{formatMoney(totals.discount)}</dd></div>
+            )}
+            <div>
+              <dt>Shipping{quote?.shipping_zone ? ` (${quote.shipping_zone.name})` : ''}</dt>
+              <dd>{totals ? (Number(totals.shipping) > 0 ? formatMoney(totals.shipping) : 'Free') : '—'}</dd>
+            </div>
+            {totals && Number(totals.tax) > 0 && (
+              <div><dt>Tax ({quote.tax_rate}%)</dt><dd>{formatMoney(totals.tax)}</dd></div>
+            )}
+            <div className="checkout-summary__total"><dt>Total</dt><dd>{totals ? formatMoney(totals.total) : '—'}</dd></div>
+          </dl>
         </aside>
       </div>
     </div>

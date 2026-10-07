@@ -2,13 +2,17 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Icon from './Icon';
 import { useCart } from '../../features/cart/CartProvider';
-import { useAuth } from '../../features/auth/AuthProvider';
+import { useWishlist } from '../../features/wishlist/WishlistProvider';
 import './ProductCard.css';
 
 /**
  * Standard product tile — used on the landing page and the Shop
  * page. Links through to /products/:id. Expects:
- *   { id, name, category?, price, oldPrice?, rating?, badge?, tone, inStock?, imageUrl?, imageUrlHover? }
+ *   { id, name, category?, price, pricePrefix?, oldPrice?, rating?, badge?, tone, inStock?, hasOptions?, imageUrl?, imageUrlHover? }
+ * (mapProductForCard in utils/product.js builds this from an API row).
+ * oldPrice is the struck-through price during a sale. Products with
+ * options can't be quick-added (an option has to be picked), so Quick add
+ * opens the product page for them instead.
  * `category` and `rating` are optional since the products API doesn't
  * return a rating yet. `tone` (1-4) picks a placeholder art
  * background/icon, used whenever there's no `imageUrl` — or if the
@@ -28,11 +32,13 @@ const ProductCard = ({ product }) => {
     name,
     category,
     price,
+    pricePrefix = '',
     oldPrice,
     rating,
     badge,
     tone = 1,
     inStock = true,
+    hasOptions = false,
     imageUrl,
     imageUrlHover,
   } = product;
@@ -45,12 +51,13 @@ const ProductCard = ({ product }) => {
 
   const navigate = useNavigate();
   const { addItem } = useCart();
-  const { isAuthenticated } = useAuth();
+  const { isSaved, toggle } = useWishlist();
+  const saved = isSaved(id);
 
   const handleQuickAdd = async (event) => {
     event.preventDefault();
-    if (!isAuthenticated) {
-      navigate('/login');
+    if (hasOptions) {
+      navigate(href);
       return;
     }
     setAdding(true);
@@ -94,6 +101,15 @@ const ProductCard = ({ product }) => {
             {badge && <span className="badge product-card__badge">{badge}</span>}
           </div>
         </Link>
+        <button
+          type="button"
+          className={`product-card__wish ${saved ? 'is-saved' : ''}`}
+          onClick={() => toggle(id)}
+          aria-label={saved ? `Remove ${name} from wishlist` : `Save ${name} to wishlist`}
+          aria-pressed={saved}
+        >
+          <Icon name="heart" size={18} className={saved ? 'is-filled' : ''} />
+        </button>
         {inStock && (
           <button
             className="product-card__quick-add btn btn-light btn-sm"
@@ -101,7 +117,7 @@ const ProductCard = ({ product }) => {
             onClick={handleQuickAdd}
             disabled={adding}
           >
-            <Icon name="cart" size={16} /> {adding ? 'Adding…' : 'Quick add'}
+            <Icon name="cart" size={16} /> {adding ? 'Adding…' : hasOptions ? 'Choose options' : 'Quick add'}
           </button>
         )}
       </div>
@@ -118,7 +134,7 @@ const ProductCard = ({ product }) => {
             </div>
           )}
           <div className="product-card__price">
-            <span>${price}</span>
+            <span>{pricePrefix}${price}</span>
             {oldPrice && <span className="product-card__price-old">${oldPrice}</span>}
           </div>
         </div>

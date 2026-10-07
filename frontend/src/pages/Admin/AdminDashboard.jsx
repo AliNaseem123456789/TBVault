@@ -1,22 +1,39 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { getCategories } from '../../api/categories.api';
+import AdminOverview from './AdminOverview';
 import AdminProducts from './AdminProducts';
 import AdminCategories from './AdminCategories';
 import AdminOrders from './AdminOrders';
+import AdminSales from './AdminSales';
+import AdminCoupons from './AdminCoupons';
+import AdminReturns from './AdminReturns';
+import AdminCustomers from './AdminCustomers';
+import AdminReviews from './AdminReviews';
+import AdminSettings from './AdminSettings';
 import './Admin.css';
 
 const TABS = [
+  { id: 'overview', label: 'Overview' },
   { id: 'orders', label: 'Orders' },
+  { id: 'returns', label: 'Returns' },
   { id: 'products', label: 'Products' },
   { id: 'categories', label: 'Categories' },
+  { id: 'sales', label: 'Sales' },
+  { id: 'coupons', label: 'Coupons' },
+  { id: 'customers', label: 'Customers' },
+  { id: 'reviews', label: 'Reviews' },
+  { id: 'settings', label: 'Settings' },
 ];
 
 /** /admin — only reachable with role ADMIN (ProtectedRoute in App.jsx, requireAdmin on the API). */
 const AdminDashboard = () => {
-  const [tab, setTab] = useState('orders');
+  // The tab lives in the URL (?tab=orders) so a refresh or a shared link opens the same tab.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = TABS.some((t) => t.id === searchParams.get('tab')) ? searchParams.get('tab') : 'overview';
   const [categories, setCategories] = useState([]);
 
-  // Categories are shared by the Products tab (dropdown) and the Categories tab.
+  // Categories are shared by the Products, Sales and Categories tabs.
   const loadCategories = useCallback(async () => {
     try {
       const res = await getCategories();
@@ -45,7 +62,7 @@ const AdminDashboard = () => {
             role="tab"
             aria-selected={tab === t.id}
             className={`admin-tab ${tab === t.id ? 'is-active' : ''}`}
-            onClick={() => setTab(t.id)}
+            onClick={() => setSearchParams({ tab: t.id })}
           >
             {t.label}
           </button>
@@ -53,9 +70,16 @@ const AdminDashboard = () => {
       </div>
 
       <div role="tabpanel">
+        {tab === 'overview' && <AdminOverview />}
         {tab === 'orders' && <AdminOrders />}
+        {tab === 'returns' && <AdminReturns />}
         {tab === 'products' && <AdminProducts categories={categories} />}
         {tab === 'categories' && <AdminCategories categories={categories} onChange={loadCategories} />}
+        {tab === 'sales' && <AdminSales categories={categories} />}
+        {tab === 'coupons' && <AdminCoupons />}
+        {tab === 'customers' && <AdminCustomers />}
+        {tab === 'reviews' && <AdminReviews />}
+        {tab === 'settings' && <AdminSettings />}
       </div>
     </div>
   );

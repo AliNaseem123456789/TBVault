@@ -79,3 +79,25 @@
 
 .product-card__price { display: flex; align-items: baseline; gap: var(--space-2); font-weight: var(--weight-extra); font-size: var(--text-lg); margin-top: auto; padding-top: var(--space-1); }
 .product-card__price-old { font-weight: var(--weight-medium); font-size: var(--text-sm); color: var(--color-ink-faint); text-decoration: line-through; }
+
+/* Wishlist heart, top-right of the photo */
+.product-card__wish {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.product-card__wish:hover { transform: scale(1.08); }
+.product-card__wish.is-saved { color: var(--color-accent); }
+.product-card__wish .is-filled { fill: currentColor; }

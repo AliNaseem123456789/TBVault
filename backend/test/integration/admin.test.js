@@ -193,6 +193,8 @@ t("admin catalog tools: variants, sales, coupons, shipping zones and settings", 
         body: { name: "Launch", percent_off: 20, product_id: product.id, starts_at: new Date(Date.now() - 1000).toISOString(), ends_at: new Date(Date.now() + 86400000).toISOString() },
     })
     assert.equal(sale.status, 201, JSON.stringify(sale.body))
+    const deals = await api("GET", "/products?onSale=true")
+    assert.deepEqual(deals.body.data.products.map((p) => p.id), [product.id])
     const detail = await api("GET", `/products/${product.id}`)
     assert.equal(detail.body.data.product.sale_percent, 20)
     assert.equal(detail.body.data.product.variants[0].sale_price, "36.00")

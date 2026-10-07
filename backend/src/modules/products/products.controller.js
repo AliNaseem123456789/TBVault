@@ -162,6 +162,12 @@ export const getProductsByCategory = async (req, res, { includeHidden = false } 
   if (ids !== undefined) {
     where.id = { in: ids };
   }
+  // onSale=true — products with a live sale of their own or on their category (the Deals page).
+  if (req.query.onSale === "true") {
+    const now = new Date();
+    const live = { is_active: true, starts_at: { lte: now }, ends_at: { gt: now } };
+    where.AND = [...(where.AND ?? []), { OR: [{ sales: { some: live } }, { category: { sales: { some: live } } }] }];
+  }
   // Sorting
   const finalSortBy = sortBy || "created_at";
   const finalOrder = order || "desc";

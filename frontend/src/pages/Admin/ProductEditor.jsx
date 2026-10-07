@@ -12,6 +12,7 @@ import {
   setPrimaryImage,
 } from '../../api/admin.api';
 import { errorMessage } from './adminUtils';
+import VariantsEditor from './VariantsEditor';
 
 const EMPTY = { name: '', description: '', price: '', stock: '0', category_id: '', is_hidden: false };
 
@@ -223,6 +224,8 @@ const ProductEditor = ({ productId, categories, onSaved, onDeleted, onClose }) =
           )}
         </div>
       )}
+
+      {id && <VariantsEditor productId={id} basePrice={form.price || 0} onChange={onSaved} />}
     </div>
   );
 };

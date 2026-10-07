@@ -4,12 +4,14 @@ import Icon from '../ui/Icon';
 import Button from '../ui/Button';
 import { useCart } from '../../features/cart/CartProvider';
 import { useAuth } from '../../features/auth/AuthProvider';
+import { useWishlist } from '../../features/wishlist/WishlistProvider';
 import './Navbar.css';
 
 const NAV_LINKS = [
   { to: '/', label: 'Home' },
   { to: '/shop', label: 'Shop' },
   { to: '/deals', label: 'Deals' },
+  { to: '/track', label: 'Track order' },
 ];
 
 /**
@@ -23,6 +25,7 @@ const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const { count: cartCount, openCart } = useCart();
   const { isAuthenticated, isAdmin } = useAuth();
+  const { count: wishlistCount } = useWishlist();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -62,11 +65,15 @@ const Navbar = () => {
           >
             <Icon name="user" size={19} />
           </Link>
+          <Link to="/wishlist" className="navbar__icon-btn navbar__cart navbar__wishlist" aria-label="Wishlist">
+            <Icon name="heart" size={19} />
+            {wishlistCount > 0 && <span className="navbar__cart-count">{wishlistCount}</span>}
+          </Link>
           <button className="navbar__icon-btn navbar__cart" aria-label="Cart" type="button" onClick={openCart}>
             <Icon name="cart" size={19} />
             {cartCount > 0 && <span className="navbar__cart-count">{cartCount}</span>}
           </button>
-          <Button to="/sign-up" size="sm" className="navbar__cta">Get started</Button>
+          {!isAuthenticated && <Button to="/sign-up" size="sm" className="navbar__cta">Get started</Button>}
           <button
             className="navbar__icon-btn navbar__menu-toggle"
             aria-label="Toggle menu"
@@ -92,6 +99,9 @@ const Navbar = () => {
             onClick={() => setMenuOpen(false)}
           >
             Account
+          </Link>
+          <Link to="/wishlist" className="navbar__mobile-link" onClick={() => setMenuOpen(false)}>
+            Wishlist{wishlistCount > 0 ? ` (${wishlistCount})` : ''}
           </Link>
           {isAdmin && (
             <NavLink to="/admin" className="navbar__mobile-link" onClick={() => setMenuOpen(false)}>

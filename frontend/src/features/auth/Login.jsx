@@ -1,13 +1,20 @@
 import { useState } from "react";
 import { useAuth } from "./AuthProvider";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { useNavigate, useLocation, useSearchParams, Link } from "react-router-dom";
 import AuthLayout from "./AuthLayout";
 import Button from "../../components/ui/Button";
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [searchParams] = useSearchParams();
+  // Google sign-in sends people back here with ?error=... when it fails.
+  const OAUTH_ERRORS = {
+    account_blocked: "This account has been blocked. Please contact support.",
+    email_not_verified: "Your Google email isn't verified.",
+  };
+  const oauthError = searchParams.get("error");
+  const [error, setError] = useState(oauthError ? OAUTH_ERRORS[oauthError] ?? "Google sign-in didn't work. Please try again." : "");
   const auth = useAuth();
 
   const { login } = auth;

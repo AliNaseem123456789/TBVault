@@ -150,3 +150,30 @@ ad-hoc:
   discoverable.
 - Every icon-only button has an `aria-label`.
 - `npm run lint` passes.
+
+## 5. Commerce features (added October 2026)
+
+New feature folders, following the `features/auth` pattern:
+
+```
+features/cart/        CartProvider: server cart when signed in, browser (localStorage)
+                      cart for guests, merged into the account on login
+features/wishlist/    WishlistProvider: saved product ids, shared by every heart button
+features/addresses/   AddressForm + AddressBook (profile page) + AddressSummary (checkout)
+features/orders/      OrderView (shared by /orders/:id and /track/:token), OrderTimeline,
+                      ReturnRequestForm, useOrderLoader (polls after Stripe redirects back)
+features/store/       useStoreConfig (tax, free-shipping threshold, card payments on/off),
+                      visitTracker (one anonymous visit per browser per day)
+```
+
+New pages: `Deals` (/deals), `Wishlist` (/wishlist), `Track` (/track and
+/track/:token for guests), `Invoice` (printable receipt, outside Layout so
+printing is clean). The admin dashboard has one component per tab in
+`pages/Admin/` and keeps the active tab in `?tab=`.
+
+**Prices are never computed in the browser for checkout.** The cart drawer
+shows a display subtotal, but checkout totals (sales, coupon, shipping zone,
+tax) come from `POST /order/quote`, and placing an order re-prices it on the
+server. Use `unitPrice()` and `mapProductForCard()` in `utils/product.js` to
+show a product's price, so sale prices and "From $x" for products with
+options look the same everywhere.

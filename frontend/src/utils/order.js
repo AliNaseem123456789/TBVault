@@ -33,6 +33,36 @@ export const statusBadgeClass = (status) => STATUS_BADGE_CLASS[status] ?? 'badge
 const CANCELLABLE_STATUSES = ['pending', 'confirmed'];
 export const isCancellable = (status) => CANCELLABLE_STATUSES.includes(status);
 
+export const PAYMENT_LABELS = {
+  unpaid: 'Unpaid',
+  paid: 'Paid',
+  partially_refunded: 'Partly refunded',
+  refunded: 'Refunded',
+};
+export const paymentLabel = (order) =>
+  order.payment_method === 'cod' && order.payment_status === 'unpaid'
+    ? 'Pay on delivery'
+    : PAYMENT_LABELS[order.payment_status] ?? order.payment_status;
+
+// The happy path a tracking timeline walks through.
+export const TIMELINE_STEPS = ['pending', 'confirmed', 'shipped', 'delivered'];
+export const STATUS_TEXT = {
+  pending: 'Order placed',
+  confirmed: 'Confirmed',
+  shipped: 'Shipped',
+  delivered: 'Delivered',
+  cancelled: 'Cancelled',
+};
+
+export const formatOrderDateTime = (value) => {
+  if (!value) return '';
+  try {
+    return new Date(value).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return '';
+  }
+};
+
 export const formatOrderDate = (value) => {
   if (!value) return '';
   try {

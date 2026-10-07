@@ -17,19 +17,28 @@ const paths = {
   menu: 'M3 6h18M3 12h18M3 18h18',
   close: 'M6 6l12 12M18 6L6 18',
   image: 'M4 5h16v14H4V5z M9 10.5a1.25 1.25 0 100-2.5 1.25 1.25 0 000 2.5z M4.5 17l4.5-5.5 3 3.5 2.5-3 5 5.5',
+  heart: 'M12 20s-7-4.4-7-10a4 4 0 017-2.6A4 4 0 0119 10c0 5.6-7 10-7 10z',
+  tag: 'M3 12V4h8l9 9-8 8-9-9z M7.5 8.5a1 1 0 100-2 1 1 0 000 2z',
+  pin: 'M12 21s-7-6.2-7-11a7 7 0 0114 0c0 4.8-7 11-7 11z M12 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z',
+  receipt: 'M6 3h12v18l-3-2-3 2-3-2-3 2V3z M9 8h6 M9 12h6',
+  card: 'M3 6h18v12H3z M3 10h18',
+  check: 'M5 12.5l4.5 4.5L19 7',
+  return: 'M9 14L4 9l5-5 M4 9h10a6 6 0 010 12h-3',
+  bell: 'M6 16V11a6 6 0 0112 0v5l1.5 2h-15L6 16z M10 20a2 2 0 004 0',
+  download: 'M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5 M5 19h14',
 };
 
 const Icon = ({ name, size = 20, strokeWidth = 1.8, className = '' }) => {
   const d = paths[name];
   if (!d) return null;
-  const filled = name === 'star';
+  const filled = name === 'star' || (name === 'heart' && className.includes('is-filled'));
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 24 24"
       fill={filled ? 'currentColor' : 'none'}
-      stroke={filled ? 'none' : 'currentColor'}
+      stroke={filled && name === 'star' ? 'none' : 'currentColor'}
       strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"

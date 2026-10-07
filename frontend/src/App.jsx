@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./features/auth/AuthProvider";
 import { CartProvider } from "./features/cart/CartProvider";
+import { WishlistProvider } from "./features/wishlist/WishlistProvider";
 import ProtectedRoute from "./features/auth/ProtectedRoute";
 import Login from "./features/auth/Login";
 import Profile from "./features/auth/Profile";
@@ -19,6 +20,10 @@ import Checkout from "./pages/Checkout/Checkout";
 import Orders from "./pages/Orders/Orders";
 import OrderDetail from "./pages/OrderDetail/OrderDetail";
 import AdminDashboard from "./pages/Admin/AdminDashboard";
+import Deals from "./pages/Deals/Deals";
+import Wishlist from "./pages/Wishlist/Wishlist";
+import TrackOrder, { TrackLookup } from "./pages/Track/TrackOrder";
+import Invoice from "./pages/Invoice/Invoice";
 import Unauthorized from "./pages/Unauthorized/Unauthorized";
 
 const App = () => {
@@ -26,6 +31,7 @@ const App = () => {
     <BrowserRouter>
       <AuthProvider>
         <CartProvider>
+        <WishlistProvider>
         <Routes>
           {/* Public storefront pages — share the Navbar/Footer/cart-drawer
               shell from Layout.jsx. Add new public pages (Shop, Product,
@@ -35,13 +41,18 @@ const App = () => {
             <Route path="/" element={<Landing />} />
             <Route path="/shop" element={<Shop />} />
             <Route path="/products/:id" element={<ProductDetail />} />
+            <Route path="/deals" element={<Deals />} />
+            {/* Guests can check out too; signed-in customers get their saved addresses. */}
+            <Route path="/checkout" element={<Checkout />} />
+            <Route path="/track" element={<TrackLookup />} />
+            <Route path="/track/:token" element={<TrackOrder />} />
 
             {/* Logged-in pages that are still part of the storefront (keep
                 the Navbar/Footer/cart) nest ProtectedRoute here instead of
                 as a separate top-level block. */}
             <Route element={<ProtectedRoute />}>
               <Route path="/profile" element={<Profile />} />
-              <Route path="/checkout" element={<Checkout />} />
+              <Route path="/wishlist" element={<Wishlist />} />
               <Route path="/orders" element={<Orders />} />
               <Route path="/orders/:id" element={<OrderDetail />} />
             </Route>
@@ -54,6 +65,12 @@ const App = () => {
             <Route path="/unauthorized" element={<Unauthorized />} />
           </Route>
 
+          {/* Printable receipts: no site chrome, so printing gives a clean page. */}
+          <Route element={<ProtectedRoute />}>
+            <Route path="/orders/:id/invoice" element={<Invoice />} />
+          </Route>
+          <Route path="/track/:token/invoice" element={<Invoice />} />
+
           <Route path="/oauth-success" element={<OAuthSuccess />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
@@ -65,6 +82,7 @@ const App = () => {
           <Route path="/sign-up" element={<Signup />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </WishlistProvider>
         </CartProvider>
       </AuthProvider>
     </BrowserRouter>

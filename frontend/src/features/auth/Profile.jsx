@@ -5,6 +5,9 @@ import { useCart } from '../cart/CartProvider';
 import { verifyEmail, logoutAll as logoutAllApi, updateMe, changePassword } from '../../api/auth.api';
 import Button from '../../components/ui/Button';
 import Icon from '../../components/ui/Icon';
+import AddressBook from '../addresses/AddressBook';
+import { useWishlist } from '../wishlist/WishlistProvider';
+import '../addresses/Addresses.css';
 import './Profile.css';
 
 /**
@@ -22,6 +25,7 @@ import './Profile.css';
 const Profile = () => {
   const { user, logout, refreshUser, setToken, isAdmin } = useAuth();
   const { count: cartCount, openCart } = useCart();
+  const { count: wishlistCount } = useWishlist();
   const navigate = useNavigate();
 
   const [message, setMessage] = useState('');
@@ -213,12 +217,29 @@ const Profile = () => {
           </Button>
         </section>
 
+        <section className="card profile-card">
+          <h3>
+            <Icon name="heart" size={18} /> Wishlist
+          </h3>
+          <p>{wishlistCount > 0 ? `${wishlistCount} saved product${wishlistCount === 1 ? '' : 's'}.` : 'Nothing saved yet.'}</p>
+          <Button to="/wishlist" variant="ghost">
+            View wishlist
+          </Button>
+        </section>
+
+        <section className="card profile-card profile-card--wide">
+          <h3>
+            <Icon name="pin" size={18} /> Addresses
+          </h3>
+          <AddressBook />
+        </section>
+
         {isAdmin && (
           <section className="card profile-card">
             <h3>
               <Icon name="shield" size={18} /> Admin
             </h3>
-            <p>Manage products, categories and orders.</p>
+            <p>Sales, orders, products, coupons, returns and customers.</p>
             <Button to="/admin" variant="ghost">
               Open dashboard
             </Button>

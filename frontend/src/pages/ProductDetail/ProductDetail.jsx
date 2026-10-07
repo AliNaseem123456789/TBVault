@@ -1,14 +1,63 @@
-import { useEffect, useState } from 'react';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import Icon from '../../components/ui/Icon';
 import Button from '../../components/ui/Button';
 import ProductGrid from '../../components/ui/ProductGrid';
-import { getProductById, getProducts } from '../../api/products.api';
-import { getImageUrl, mapProductForCard } from '../../utils/product';
+import { getProductById, getProducts, getRelatedProducts } from '../../api/products.api';
+import { createStockAlert } from '../../api/store.api';
+import { getImageUrl, mapProductForCard, unitPrice, activeVariants } from '../../utils/product';
+import { formatMoney } from '../../utils/money';
+import { addRecentlyViewed, getRecentlyViewed } from '../../utils/recentlyViewed';
 import { useCart } from '../../features/cart/CartProvider';
 import { useAuth } from '../../features/auth/AuthProvider';
+import { useWishlist } from '../../features/wishlist/WishlistProvider';
+import { useStoreConfig } from '../../features/store/useStoreConfig';
 import ProductReviews from '../../features/reviews/ProductReviews';
 import './ProductDetail.css';
+
+// "Back in stock" signup, shown when the product (or the chosen option) is sold out.
+const StockAlertForm = ({ productId, variantId }) => {
+  const { isAuthenticated, user } = useAuth();
+  const [email, setEmail] = useState('');
+  const [state, setState] = useState({ sending: false, message: '', error: '' });
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setState({ sending: true, message: '', error: '' });
+    try {
+      const res = await createStockAlert(productId, { email: isAuthenticated ? undefined : email, variantId });
+      setState({ sending: false, message: res.message, error: '' });
+    } catch (err) {
+      setState({ sending: false, message: '', error: err?.response?.data?.message || 'Could not save your alert' });
+    }
+  };
+
+  if (state.message) return <p className="form-alert form-alert-success">{state.message}</p>;
+  return (
+    <form className="product-detail__alert" onSubmit={submit}>
+      <p>
+        <Icon name="bell" size={16} /> Sold out. {isAuthenticated ? `We'll email ${user?.email ?? 'you'} when it's back.` : "Get an email when it's back:"}
+      </p>
+      <div className="product-detail__alert-row">
+        {!isAuthenticated && (
+          <input
+            type="email"
+            className="input"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            aria-label="Email for back-in-stock alert"
+          />
+        )}
+        <Button type="submit" variant="ghost" disabled={state.sending}>
+          {state.sending ? 'Saving…' : 'Notify me'}
+        </Button>
+      </div>
+      {state.error && <p className="form-alert form-alert-error">{state.error}</p>}
+    </form>
+  );
+};
 
 const ProductDetail = () => {
   const { id } = useParams();
@@ -17,37 +66,43 @@ const ProductDetail = () => {
   const [product, setProduct] = useState(null);
   const [activeImage, setActiveImage] = useState(0);
   const [qty, setQty] = useState(1);
+  const [variantId, setVariantId] = useState(null);
 
   const [related, setRelated] = useState([]);
+  const [recent, setRecent] = useState([]);
   const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState('');
 
-  const navigate = useNavigate();
   const { addItem } = useCart();
-  const { isAuthenticated } = useAuth();
+  const { isSaved, toggle } = useWishlist();
+  const config = useStoreConfig();
 
   // Load the product itself.
   useEffect(() => {
     let cancelled = false;
-    // Resetting to 'loading' whenever `id` changes (not just on
-    // mount) is intentional, so navigating between products shows
-    // the skeleton instead of stale content.
+    // Reset whenever `id` changes (not just on mount), so navigating
+    // between products shows the skeleton instead of stale content.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setStatus('loading');
     setActiveImage(0);
     setQty(1);
+    setVariantId(null);
+    setAddError('');
 
     getProductById(id)
       .then((res) => {
         if (cancelled) return;
         const row = res?.data?.product;
-        // Hidden products aren't meant for the public storefront, even
-        // if someone guesses the URL — treat them the same as "not found".
         if (!row || row.is_hidden) {
           setStatus('notFound');
           return;
         }
         setProduct(row);
+        // Pre-select the first option that's in stock.
+        const options = activeVariants(row);
+        if (options.length) setVariantId((options.find((v) => v.stock > 0) ?? options[0]).id);
         setStatus('ready');
+        addRecentlyViewed(row.id);
       })
       .catch((err) => {
         console.error('Failed to load product:', err);
@@ -60,31 +115,37 @@ const ProductDetail = () => {
     };
   }, [id]);
 
-  // Related products from the same category, once the product is loaded.
-  // Note: getProductById doesn't include the category name (only
-  // category_id) yet, so the breadcrumb below falls back gracefully
-  // when it's missing — see ARCHITECTURE.md / earlier backend notes.
+  // Related products and "recently viewed", once the product is loaded.
   useEffect(() => {
     if (!product) return;
     let cancelled = false;
 
-    getProducts({ categoryId: product.category_id, limit: 5 })
-      .then((res) => {
-        if (cancelled) return;
-        const rows = (res?.data?.products ?? [])
-          .filter((p) => !p.is_hidden && p.id !== product.id)
-          .slice(0, 4);
-        setRelated(rows.map(mapProductForCard));
-      })
-      .catch((err) => {
-        console.error('Failed to load related products:', err);
-        if (!cancelled) setRelated([]);
-      });
+    getRelatedProducts(product.id, 4)
+      .then((res) => !cancelled && setRelated((res?.data?.products ?? []).map(mapProductForCard)))
+      .catch(() => !cancelled && setRelated([]));
+
+    const recentIds = getRecentlyViewed().filter((rid) => rid !== product.id).slice(0, 4);
+    if (recentIds.length) {
+      getProducts({ ids: recentIds.join(','), limit: 4 })
+        .then((res) => {
+          if (cancelled) return;
+          const rows = res?.data?.products ?? [];
+          // Keep the "most recent first" order the ids were stored in.
+          rows.sort((a, b) => recentIds.indexOf(a.id) - recentIds.indexOf(b.id));
+          setRecent(rows.map(mapProductForCard));
+        })
+        .catch(() => !cancelled && setRecent([]));
+    } else {
+      setRecent([]);
+    }
 
     return () => {
       cancelled = true;
     };
   }, [product]);
+
+  const variants = useMemo(() => activeVariants(product), [product]);
+  const variant = variants.find((v) => v.id === variantId) ?? null;
 
   if (status === 'loading') {
     return (
@@ -124,8 +185,24 @@ const ProductDetail = () => {
 
   const images = product.images?.length ? product.images : [null];
   const categoryName = product.category?.name;
-  const inStock = product.stock > 0;
-  const price = Number(product.price).toFixed(2);
+  const hasOptions = variants.length > 0;
+  const stock = hasOptions ? variant?.stock ?? 0 : product.stock;
+  const inStock = stock > 0;
+  const { price, listPrice, onSale } = unitPrice(product, variant);
+  const saved = isSaved(product.id);
+  const saleEnds = product.sale_ends_at ? new Date(product.sale_ends_at) : null;
+
+  const handleAdd = async () => {
+    setAdding(true);
+    setAddError('');
+    try {
+      await addItem(product.id, qty, { variantId: variant?.id ?? null, product, variant });
+    } catch (err) {
+      setAddError(err?.response?.data?.message || 'Could not add this to your cart');
+    } finally {
+      setAdding(false);
+    }
+  };
 
   return (
     <div className="product-detail container">
@@ -168,62 +245,93 @@ const ProductDetail = () => {
         </div>
 
         <div className="product-detail__info">
-          {categoryName && <span className="badge">{categoryName}</span>}
-          <h1>{product.name}</h1>
+          <div className="product-detail__badges">
+            {categoryName && <span className="badge">{categoryName}</span>}
+            {onSale && <span className="badge badge-secondary">{product.sale_percent}% off</span>}
+          </div>
+          <div className="product-detail__title-row">
+            <h1>{product.name}</h1>
+            <button
+              type="button"
+              className={`product-detail__wish ${saved ? 'is-saved' : ''}`}
+              onClick={() => toggle(product.id)}
+              aria-pressed={saved}
+              aria-label={saved ? 'Remove from wishlist' : 'Save to wishlist'}
+            >
+              <Icon name="heart" size={20} className={saved ? 'is-filled' : ''} />
+            </button>
+          </div>
 
-          <div className="product-detail__price">${price}</div>
+          <div className="product-detail__price">
+            {formatMoney(price)}
+            {onSale && <s className="product-detail__price-old">{formatMoney(listPrice)}</s>}
+          </div>
+          {onSale && saleEnds && (
+            <p className="product-detail__sale-ends">Sale ends {saleEnds.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</p>
+          )}
+
+          {hasOptions && (
+            <fieldset className="product-detail__options">
+              <legend>Option</legend>
+              <div className="product-detail__option-list">
+                {variants.map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    className={`product-detail__option ${v.id === variantId ? 'is-active' : ''} ${v.stock <= 0 ? 'is-sold-out' : ''}`}
+                    onClick={() => {
+                      setVariantId(v.id);
+                      setQty(1);
+                    }}
+                    aria-pressed={v.id === variantId}
+                  >
+                    {v.name}
+                    {v.stock <= 0 && <span className="visually-hidden"> (sold out)</span>}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          )}
 
           <p className={`product-detail__stock ${inStock ? 'is-in-stock' : 'is-out-of-stock'}`}>
-            {inStock ? `In stock — ${product.stock} available` : 'Out of stock'}
+            {inStock ? (stock <= 5 ? `Only ${stock} left` : 'In stock') : 'Out of stock'}
           </p>
 
           {product.description && <p className="product-detail__description">{product.description}</p>}
 
-          <div className="product-detail__actions">
-            <div className="qty-stepper">
-              <button type="button" onClick={() => setQty((q) => Math.max(1, q - 1))} disabled={!inStock || qty <= 1} aria-label="Decrease quantity">
-                −
-              </button>
-              <span>{qty}</span>
-              <button
-                type="button"
-                onClick={() => setQty((q) => Math.min(product.stock, q + 1))}
-                disabled={!inStock || qty >= product.stock}
-                aria-label="Increase quantity"
-              >
-                +
-              </button>
+          {inStock ? (
+            <div className="product-detail__actions">
+              <div className="qty-stepper">
+                <button type="button" onClick={() => setQty((q) => Math.max(1, q - 1))} disabled={qty <= 1} aria-label="Decrease quantity">
+                  −
+                </button>
+                <span>{qty}</span>
+                <button type="button" onClick={() => setQty((q) => Math.min(stock, q + 1))} disabled={qty >= stock} aria-label="Increase quantity">
+                  +
+                </button>
+              </div>
+              <Button size="lg" disabled={adding} className="product-detail__add" onClick={handleAdd}>
+                <Icon name="cart" size={18} /> {adding ? 'Adding…' : 'Add to cart'}
+              </Button>
             </div>
-            <Button
-              size="lg"
-              disabled={!inStock || adding}
-              className="product-detail__add"
-              onClick={async () => {
-                if (!isAuthenticated) {
-                  navigate('/login');
-                  return;
-                }
-                setAdding(true);
-                try {
-                  await addItem(product.id, qty);
-                } catch (err) {
-                  console.error('Failed to add to cart:', err);
-                } finally {
-                  setAdding(false);
-                }
-              }}
-            >
-              <Icon name="cart" size={18} /> {adding ? 'Adding…' : inStock ? 'Add to cart' : 'Out of stock'}
-            </Button>
-          </div>
+          ) : (
+            <StockAlertForm key={variantId ?? 'product'} productId={product.id} variantId={variant?.id ?? null} />
+          )}
+          {addError && <p className="form-alert form-alert-error">{addError}</p>}
 
           <div className="product-detail__trust">
             <span>
-              <Icon name="truck" size={16} /> Free shipping over $50
+              <Icon name="truck" size={16} />{' '}
+              {config?.free_shipping_over ? `Free shipping over ${formatMoney(config.free_shipping_over)}` : 'Fast delivery'}
             </span>
             <span>
               <Icon name="shield" size={16} /> Secure checkout
             </span>
+            {config?.return_window_days > 0 && (
+              <span>
+                <Icon name="return" size={16} /> {config.return_window_days}-day returns
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -234,9 +342,18 @@ const ProductDetail = () => {
         <section className="section product-detail__related">
           <div className="section-heading">
             <span className="badge badge-secondary">You might also like</span>
-            <h2>More from {categoryName || 'this category'}.</h2>
+            <h2>More from {categoryName || 'the shop'}.</h2>
           </div>
           <ProductGrid status="ready" products={related} />
+        </section>
+      )}
+
+      {recent.length > 0 && (
+        <section className="section-tight product-detail__related">
+          <div className="section-heading">
+            <span className="badge badge-muted">Recently viewed</span>
+          </div>
+          <ProductGrid status="ready" products={recent} />
         </section>
       )}
     </div>

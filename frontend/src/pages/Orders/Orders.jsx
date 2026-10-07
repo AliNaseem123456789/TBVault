@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getOrders } from '../../api/orders.api';
-import { statusBadgeClass, formatOrderDate } from '../../utils/order';
+import { statusBadgeClass, formatOrderDate, paymentLabel } from '../../utils/order';
 import Icon from '../../components/ui/Icon';
 import Button from '../../components/ui/Button';
 import './Orders.css';
@@ -77,7 +77,10 @@ const Orders = () => {
                   <span className="order-row__date">{formatOrderDate(order.order_date)}</span>
                 </div>
                 <span className={`badge ${statusBadgeClass(order.status)}`}>{order.status}</span>
-                <span className="order-row__total">${Number(order.total_amount).toFixed(2)}</span>
+                <span className="order-row__total">
+                  ${Number(order.total_amount).toFixed(2)}
+                  <small className="order-row__payment">{paymentLabel(order)}</small>
+                </span>
                 <Icon name="arrowRight" size={16} className="order-row__arrow" />
               </Link>
             </li>

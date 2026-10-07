@@ -87,3 +87,75 @@
 .order-detail__shipping h2, .order-detail__cancel h2 { font-size: var(--text-md); margin-bottom: var(--space-3); }
 .order-detail__shipping p { white-space: pre-line; color: var(--color-ink-muted); font-size: var(--text-sm); line-height: 1.6; }
 .order-detail__cancel p { color: var(--color-ink-muted); font-size: var(--text-sm); margin-bottom: var(--space-3); }
+
+/* ---------- Header actions, payment, timeline, tracking ---------- */
+.order-detail__header-actions { display: flex; align-items: center; gap: var(--space-4); }
+.order-detail__invoice-link { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--color-accent); }
+.order-detail__muted { color: var(--color-ink-muted); font-size: var(--text-sm); margin: 0; }
+
+.order-detail__pay {
+  margin-top: var(--space-5);
+  padding: var(--space-5);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap;
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.order-detail__pay h2 { font-size: var(--text-md); display: flex; align-items: center; gap: var(--space-2); }
+.order-detail__pay p { margin: var(--space-1) 0 0; font-size: var(--text-sm); color: var(--color-ink-muted); }
+
+.order-detail__progress { margin-top: var(--space-5); padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-5); }
+
+.order-timeline { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--space-3); counter-reset: none; }
+.order-timeline__step { position: relative; display: flex; flex-direction: column; gap: var(--space-1); padding-top: var(--space-6); }
+.order-timeline__step::before {
+  content: ''; position: absolute; top: 13px; left: 30px; right: calc(-1 * var(--space-3));
+  height: 2px; background: var(--color-border);
+}
+.order-timeline__step:last-child::before { display: none; }
+.order-timeline__step.is-done::before { background: var(--color-accent); }
+.order-timeline__dot {
+  position: absolute; top: 0; left: 0;
+  width: 28px; height: 28px; border-radius: var(--radius-full);
+  border: 2px solid var(--color-border-strong); background: var(--color-surface);
+  display: inline-flex; align-items: center; justify-content: center; color: var(--color-surface);
+}
+.order-timeline__step.is-done .order-timeline__dot { background: var(--color-accent); border-color: var(--color-accent); }
+.order-timeline__step.is-current .order-timeline__dot { box-shadow: 0 0 0 5px var(--color-accent-soft); }
+.order-timeline__step.is-cancelled .order-timeline__dot { background: var(--color-danger); border-color: var(--color-danger); }
+.order-timeline__label { font-weight: var(--weight-semibold); font-size: var(--text-sm); padding-top: var(--space-2); }
+.order-timeline__step:not(.is-done):not(.is-cancelled) .order-timeline__label { color: var(--color-ink-faint); }
+.order-timeline__time { font-size: var(--text-xs); color: var(--color-ink-muted); }
+
+.order-detail__tracking {
+  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+  padding: var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-alt); font-size: var(--text-sm);
+}
+.order-detail__tracking span { flex: 1; }
+
+/* ---------- Totals & refunds ---------- */
+.order-item__name:hover { color: var(--color-accent); }
+.order-item__was { color: var(--color-ink-faint); }
+.order-detail__totals { margin: var(--space-5) 0 0; padding-top: var(--space-4); border-top: 1px solid var(--color-border); display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--text-sm); }
+.order-detail__totals > div { display: flex; justify-content: space-between; gap: var(--space-3); }
+.order-detail__totals dt { color: var(--color-ink-muted); }
+.order-detail__totals dd { margin: 0; font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+.order-detail__totals .is-discount dd, .order-detail__totals .is-refund dd { color: var(--color-secondary); }
+.order-detail__totals .order-detail__total { margin-top: var(--space-2); padding-top: var(--space-3); }
+.order-detail__totals .order-detail__total dt { color: var(--color-ink); }
+
+/* ---------- Returns ---------- */
+.order-detail__returns { padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); align-items: flex-start; }
+.order-detail__returns h2 { font-size: var(--text-md); display: flex; align-items: center; gap: var(--space-2); }
+.order-return { width: 100%; padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--text-sm); }
+.order-return p { margin: var(--space-1) 0 0; color: var(--color-ink-muted); }
+.order-return__head { display: flex; justify-content: space-between; align-items: center; }
+.order-return__note { font-style: italic; }
+
+.return-form { width: 100%; display: flex; flex-direction: column; gap: var(--space-4); }
+.return-form__items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.return-form__items li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); font-size: var(--text-sm); }
+.return-form__items label { display: flex; align-items: center; gap: var(--space-2); }
+.return-form__items input { accent-color: var(--color-accent); }
+.return-form__qty { width: 72px; padding: var(--space-1) var(--space-2); }
+.return-form__actions { display: flex; gap: var(--space-3); }
+.return-form textarea { resize: vertical; font-family: inherit; }

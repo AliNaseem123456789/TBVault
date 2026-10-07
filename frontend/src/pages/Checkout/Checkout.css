@@ -25,7 +25,7 @@
   .checkout-page__grid { grid-template-columns: 1fr; }
 }
 
-.checkout-form { padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-5); }
+.checkout-form { display: flex; flex-direction: column; gap: var(--space-5); }
 .checkout-form__row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
 @media (max-width: 479px) {
   .checkout-form__row { grid-template-columns: 1fr; }
@@ -64,6 +64,14 @@
 .checkout-summary__qty { font-size: var(--text-xs); color: var(--color-ink-muted); }
 .checkout-summary__price { font-size: var(--text-sm); font-weight: var(--weight-semibold); white-space: nowrap; }
 
+.checkout-summary__totals { margin: 0; display: flex; flex-direction: column; gap: var(--space-2); font-size: var(--text-sm); }
+.checkout-summary__totals > div { display: flex; justify-content: space-between; gap: var(--space-3); }
+.checkout-summary__totals dt { color: var(--color-ink-muted); }
+.checkout-summary__totals dd { margin: 0; font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+.checkout-summary__totals .is-discount dd { color: var(--color-secondary); }
+.checkout-summary__totals .checkout-summary__total { margin-top: var(--space-2); }
+.checkout-summary__totals .checkout-summary__total dt { color: var(--color-ink); }
+
 .checkout-summary__total {
   display: flex;
   align-items: center;
@@ -73,3 +81,45 @@
   padding-top: var(--space-4);
   border-top: 1px solid var(--color-border);
 }
+
+/* ---------- Sections ---------- */
+.checkout-section { padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
+.checkout-section h2 { font-size: var(--text-lg); display: flex; align-items: center; gap: var(--space-3); }
+.checkout-section__step {
+  width: 28px; height: 28px; border-radius: var(--radius-full);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--color-ink); color: var(--color-surface); font-size: var(--text-sm);
+}
+.checkout-section__static { margin: 0; font-weight: var(--weight-semibold); }
+.checkout-section .checkout-form__note { text-align: left; margin: 0; }
+
+/* ---------- Payment options ---------- */
+.payment-options { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.payment-option {
+  display: flex; align-items: flex-start; gap: var(--space-3);
+  padding: var(--space-4); border: 1.5px solid var(--color-border); border-radius: var(--radius-md); cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.payment-option input { margin-top: 3px; accent-color: var(--color-accent); }
+.payment-option span { display: flex; flex-direction: column; gap: 2px; }
+.payment-option small { color: var(--color-ink-muted); font-size: var(--text-xs); }
+.payment-option.is-selected { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.payment-option.is-disabled { opacity: 0.55; cursor: not-allowed; }
+@media (max-width: 479px) { .payment-options { grid-template-columns: 1fr; } }
+
+/* ---------- Summary extras ---------- */
+.checkout-summary__item.has-problem .checkout-summary__name { color: var(--color-danger); }
+.checkout-summary__problem { font-size: var(--text-xs); font-weight: var(--weight-semibold); color: var(--color-danger); }
+.checkout-summary__sale { display: block; text-align: right; font-size: var(--text-xs); color: var(--color-secondary); }
+.checkout-summary[aria-busy="true"] .checkout-summary__totals { opacity: 0.6; }
+
+.checkout-coupon { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); }
+.checkout-coupon .input { flex: 1; text-transform: uppercase; }
+.checkout-coupon .input::placeholder { text-transform: none; }
+.checkout-coupon__applied {
+  flex: 1; display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--color-secondary-soft); color: var(--color-secondary);
+}
+.checkout-coupon__applied span { flex: 1; display: flex; flex-direction: column; }
+.checkout-coupon__applied small { color: var(--color-ink-muted); }
+.checkout-coupon__applied button { background: none; border: none; font: inherit; font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--color-ink); cursor: pointer; }
