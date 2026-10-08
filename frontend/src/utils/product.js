@@ -1,9 +1,9 @@
 // Base URL the storage `key` returned by the API is resolved against
 // to build a fetchable image URL, e.g. `${base}/products/12/abc.jpg`.
 // Override by setting VITE_MEDIA_BASE_URL in a .env file at the
-// frontend root (then restart `npm run dev`) once you confirm the
-// real MinIO endpoint/bucket — this default assumes local MinIO on
-// its default port with the "tbvault" bucket public-read.
+// frontend root (then restart `npm run dev`). For AWS S3 that is
+// https://BUCKET.s3.REGION.amazonaws.com; this default assumes local
+// MinIO on its default port with the "tbvault" bucket public-read.
 const MEDIA_BASE_URL = import.meta.env.VITE_MEDIA_BASE_URL || 'http://localhost:9000/tbvault';
 
 export const getImageUrl = (key) => (key ? `${MEDIA_BASE_URL}/${key}` : undefined);

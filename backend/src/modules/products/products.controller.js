@@ -377,7 +377,7 @@ if (primaryIndex !== undefined &&(!Number.isInteger(primaryIndex) ||primaryIndex
       });
     }
 
-    // Upload images to MinIO
+    // Upload images to the S3 bucket
     const uploaded = await Promise.all(
       req.files.map(async (file, index) => {
         const extension = path.extname(file.originalname);

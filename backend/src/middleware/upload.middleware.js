@@ -2,7 +2,7 @@ import multer from "multer"
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]
 
-// Files are held in memory before going to MinIO, so the limits matter.
+// Files are held in memory before going to S3, so the limits matter.
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
