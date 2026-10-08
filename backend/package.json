@@ -8,6 +8,7 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "seed": "prisma db seed",
+    "import:demo": "node scripts/import-dummyjson.js",
     "worker": "npm --prefix src/modules/email-service run dev",
     "test:integration": "node --test --test-concurrency=1 \"test/integration/*.test.js\""
   },
