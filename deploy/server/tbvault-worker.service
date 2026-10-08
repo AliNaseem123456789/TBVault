@@ -1,0 +1,17 @@
+[Unit]
+Description=TBVault email worker
+After=network-online.target rabbitmq-server.service
+Wants=network-online.target rabbitmq-server.service
+
+[Service]
+User=tbvault
+# Runs from backend/ so dotenv picks up backend/.env (same file as the API).
+WorkingDirectory=/srv/tbvault/current/backend
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node --max-old-space-size=128 src/modules/email-service/src/worker.js
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

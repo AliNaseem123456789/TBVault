@@ -1,6 +1,9 @@
 node_modules
 # Keep environment variables out of version control
 .env
+# .env.production (server settings) and any other .env.* — only the example is committed
+.env.*
+!.env.example
 
 /src/generated/prisma
 # Backups written by scripts/setup-rds.ps1 (contain secrets)

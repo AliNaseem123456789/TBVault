@@ -1,1 +1,3 @@
 data-commands/
+# Server IP written by deploy/create-server.ps1
+deploy/.server-ip

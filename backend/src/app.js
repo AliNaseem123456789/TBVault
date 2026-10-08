@@ -29,6 +29,13 @@ import exportRoutes from "./modules/exports/exports.routes.js"
 // The Express app without listening or connecting to RabbitMQ, so tests can import it.
 const app = express()
 
+// Behind Nginx (production) set TRUST_PROXY=1 so req.ip is the visitor's address from
+// X-Forwarded-For, not 127.0.0.1 — rate limits and session IPs depend on it.
+if (process.env.TRUST_PROXY) {
+  const hops = Number(process.env.TRUST_PROXY)
+  app.set("trust proxy", Number.isNaN(hops) ? process.env.TRUST_PROXY : hops)
+}
+
 app.use(cors({ origin: (process.env.CORS_ORIGINS || "http://localhost:5173").split(","), credentials: true }))
 app.use(requestLogger)
 app.use(metricsMiddleware)
