@@ -3,3 +3,7 @@ node_modules
 .env
 
 /src/generated/prisma
+# Backups written by scripts/setup-rds.ps1 (contain secrets)
+.env.backup-*
+# RDS CA bundle, downloaded by scripts/setup-rds.ps1
+/certs/
