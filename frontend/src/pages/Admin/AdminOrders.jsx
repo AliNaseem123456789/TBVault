@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import Button from '../../components/ui/Button';
 import Icon from '../../components/ui/Icon';
 import { listOrders, getOrder, changeOrderStatus, updateOrderTracking, refundOrder, downloadExport } from '../../api/admin.api';
-import { statusBadgeClass, formatOrderDate, formatOrderDateTime, NEXT_STATUSES, ORDER_STATUSES, paymentLabel, STATUS_TEXT } from '../../utils/order';
+import { statusBadgeClass, formatOrderDate, formatOrderDateTime, NEXT_STATUSES, ORDER_STATUSES, paymentLabel, paymentMethodLabel, STATUS_TEXT } from '../../utils/order';
 import { errorMessage, formatMoney } from './adminUtils';
 
 const PAGE_SIZE = 20;
@@ -31,7 +31,7 @@ const OrderPanel = ({ orderId, onChanged }) => {
   const [order, setOrder] = useState(null);
   const [error, setError] = useState('');
   const [tracking, setTracking] = useState(EMPTY_TRACKING);
-  const [refund, setRefund] = useState({ amount: '', reason: '' });
+  const [refund, setRefund] = useState({ amount: '', reason: '', destination: 'original' });
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -93,8 +93,28 @@ const OrderPanel = ({ orderId, onChanged }) => {
             <div><dt>Shipping</dt><dd>{formatMoney(order.shipping_total)}</dd></div>
             {Number(order.tax_total) > 0 && <div><dt>Tax</dt><dd>{formatMoney(order.tax_total)}</dd></div>}
             <div><dt><strong>Total</strong></dt><dd><strong>{formatMoney(order.total_amount)}</strong></dd></div>
+            {Number(order.credits_applied) > 0 && <div><dt>Paid with store credit</dt><dd>{formatMoney(order.credits_applied)}</dd></div>}
             {Number(order.amount_refunded) > 0 && <div><dt>Refunded</dt><dd>−{formatMoney(order.amount_refunded)}</dd></div>}
           </dl>
+          {order.seller_orders?.length > 0 && (
+            <>
+              <h4>Sellers</h4>
+              <ul className="admin-order-panel__items">
+                {order.seller_orders.map((so) => (
+                  <li key={so.id}>
+                    <span>
+                      {so.seller?.is_platform ? 'Store' : so.seller?.store_name} · <span className={`badge ${statusBadgeClass(so.status)}`}>{so.status}</span>
+                      {so.tracking_number && <span className="admin-muted"> · {so.tracking_carrier} {so.tracking_number}</span>}
+                    </span>
+                    <span className="admin-muted">
+                      {formatMoney(so.subtotal)}
+                      {!so.seller?.is_platform && ` · ${Number(so.commission_rate)}% fee · earns ${formatMoney(so.seller_earnings)}${so.earnings_credited_at ? ' ✓' : ''}`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           <h4>Ship to</h4>
           <pre className="admin-address">{order.shipping_address}</pre>
         </section>
@@ -128,7 +148,7 @@ const OrderPanel = ({ orderId, onChanged }) => {
           <div className="admin-order-panel__form">
             <h4>Payment</h4>
             <p className="admin-muted">
-              {order.payment_method === 'card' ? 'Card (Stripe)' : 'Cash on delivery'} · {paymentLabel(order)}
+              {paymentMethodLabel(order)} · {paymentLabel(order)}
               {order.paid_at && ` · paid ${formatOrderDate(order.paid_at)}`}
             </p>
             {order.refunds.map((r) => (
@@ -143,13 +163,20 @@ const OrderPanel = ({ orderId, onChanged }) => {
                   e.preventDefault();
                   const amount = refund.amount === '' ? undefined : Number(refund.amount);
                   const label = formatMoney(amount ?? refundable);
-                  if (!window.confirm(`Refund ${label}${order.payment_method === 'card' ? ' to the customer\'s card' : ' (record a cash refund)'}?`)) return;
-                  run('refund', () => refundOrder(order.id, { amount, reason: refund.reason || undefined }), 'Refund issued');
-                  setRefund({ amount: '', reason: '' });
+                  const where = refund.destination === 'credits' ? ' to the customer\'s store credit' : order.payment_method === 'card' ? ' to the original payment' : ' (record a cash refund)';
+                  if (!window.confirm(`Refund ${label}${where}?`)) return;
+                  run('refund', () => refundOrder(order.id, { amount, reason: refund.reason || undefined, destination: refund.destination }), 'Refund issued');
+                  setRefund({ amount: '', reason: '', destination: 'original' });
                 }}
               >
                 <input className="input" type="number" min="0.01" step="0.01" max={refundable} placeholder={`Up to ${refundable.toFixed(2)}`} value={refund.amount} onChange={(e) => setRefund({ ...refund, amount: e.target.value })} aria-label="Refund amount" />
                 <input className="input" placeholder="Reason (optional)" maxLength={500} value={refund.reason} onChange={(e) => setRefund({ ...refund, reason: e.target.value })} aria-label="Refund reason" />
+                {order.user_id && (
+                  <select className="input" value={refund.destination} onChange={(e) => setRefund({ ...refund, destination: e.target.value })} aria-label="Refund to">
+                    <option value="original">To original payment</option>
+                    <option value="credits">To store credit</option>
+                  </select>
+                )}
                 <Button type="submit" size="sm" variant="ghost" className="admin-danger" disabled={busy === 'refund'}>
                   {busy === 'refund' ? 'Refunding…' : refund.amount ? 'Refund' : 'Refund all'}
                 </Button>
@@ -272,11 +299,14 @@ const AdminOrders = () => {
                       <td>
                         <div>{o.user?.name || (o.user_id ? '—' : 'Guest')}</div>
                         <div className="admin-muted">{o.user?.email ?? o.guest_email}</div>
+                        {o.seller_orders?.some((so) => !so.seller?.is_platform) && (
+                          <div className="admin-muted">Sellers: {o.seller_orders.map((so) => (so.seller?.is_platform ? 'Store' : so.seller?.store_name)).join(', ')}</div>
+                        )}
                       </td>
                       <td>{formatOrderDate(o.created_at)}</td>
                       <td className="is-num">{formatMoney(o.total_amount)}</td>
                       <td>
-                        <span className="admin-muted">{o.payment_method === 'card' ? 'Card' : 'Cash'}</span>
+                        <span className="admin-muted">{paymentMethodLabel(o)}</span>
                         <div className={o.payment_status === 'unpaid' && o.payment_method === 'card' ? 'admin-danger' : ''}>{paymentLabel(o)}</div>
                       </td>
                       <td><span className={`badge ${statusBadgeClass(o.status)}`}>{o.status}</span></td>

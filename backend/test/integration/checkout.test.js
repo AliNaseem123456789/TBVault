@@ -27,7 +27,7 @@ t("quote applies sale, coupon, regional shipping and tax in the documented order
     })
     assert.equal(status, 200)
     // 2 x (20 - 25%) = 30.00; -10% = 27.00; Karachi zone $3; tax 10% of 27 = 2.70
-    assert.deepEqual(body.data.totals, { subtotal: "30.00", discount: "3.00", shipping: "3.00", tax: "2.70", total: "32.70" })
+    assert.deepEqual(body.data.totals, { subtotal: "30.00", discount: "3.00", shipping: "3.00", tax: "2.70", total: "32.70", credits_applied: "0.00", amount_due: "32.70" })
     assert.equal(body.data.items[0].list_price, "20.00")
     assert.equal(body.data.items[0].unit_price, "15.00")
     assert.equal(body.data.shipping_zone.name, "Karachi")

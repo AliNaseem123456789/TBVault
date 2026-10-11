@@ -4,6 +4,8 @@ import { loadLiveSales } from "../pricing/pricing.service.js"
 import { getSettings } from "../settings/settings.service.js"
 import { takeStock, returnStock } from "../inventory/inventory.service.js"
 import { recordStatusChange } from "../orders/order-history.service.js"
+import { changeCredits, creditBalanceCents } from "../wallet/wallet.service.js"
+import { cancelShipments } from "../marketplace/seller-orders.service.js"
 import {
     bestSaleFor, salePriceCents, toCents, fromCents, couponProblem, matchShippingZone, computeTotals,
 } from "../../utils/pricing.helpers.js"
@@ -49,14 +51,16 @@ export const cartLines = async (userId, db = prisma) => {
  *   problems   human-readable reasons the order can't be placed as-is
  *   coupon     the coupon row when one applies, couponError otherwise
  *   totals     cents: { subtotal, discount, shipping, tax, total }
+ *   credits    cents: { balance, applied, due } — store credit (signed-in customers with useCredits)
  */
-export const buildQuote = async ({ db = prisma, userId = null, email = null, lines, address = null, couponCode = null, now = new Date() }) => {
+export const buildQuote = async ({ db = prisma, userId = null, email = null, lines, address = null, couponCode = null, useCredits = false, now = new Date() }) => {
     const productIds = [...new Set(lines.map((l) => l.productId))]
     const products = await db.product.findMany({
         where: { id: { in: productIds } },
         include: {
             variants: { where: { is_active: true } },
             images: { orderBy: [{ is_primary: "desc" }, { created_at: "asc" }], take: 1 },
+            seller: { select: { id: true, store_name: true, status: true, is_platform: true, commission_rate: true } },
         },
     })
     const byId = new Map(products.map((p) => [p.id, p]))
@@ -65,7 +69,7 @@ export const buildQuote = async ({ db = prisma, userId = null, email = null, lin
     const problems = []
     const priced = lines.map((line) => {
         const product = byId.get(line.productId)
-        if (!product || product.is_hidden) {
+        if (!product || product.is_hidden || product.seller.status !== "APPROVED") {
             problems.push(`Product #${line.productId} is no longer available`)
             return { ...line, available: false, problem: "unavailable" }
         }
@@ -96,6 +100,7 @@ export const buildQuote = async ({ db = prisma, userId = null, email = null, lin
             productName: product.name,
             variantName: variant?.name ?? null,
             imageKey: product.images[0]?.key ?? null,
+            seller: product.seller,
             listCents,
             unitCents,
             salePercent: sale?.percent ?? null,
@@ -127,7 +132,12 @@ export const buildQuote = async ({ db = prisma, userId = null, email = null, lin
         zone,
         taxRate: settings.tax_rate,
     })
-    return { lines: priced, problems, coupon, couponError, zone, taxRate: settings.tax_rate, totals }
+    // Store credit: as much of the total as the balance covers.
+    const balance = userId ? await creditBalanceCents(db, userId) : 0
+    const applied = userId && useCredits ? Math.min(balance, totals.total) : 0
+    const credits = { balance, applied, due: totals.total - applied }
+
+    return { lines: priced, problems, coupon, couponError, zone, taxRate: settings.tax_rate, commissionRate: settings.commission_rate, totals, credits }
 }
 
 /** API shape of a quote (cents -> numbers with 2 decimals). */
@@ -146,13 +156,19 @@ export const serializeQuote = (quote) => ({
         unit_price: l.unitCents != null ? fromCents(l.unitCents).toFixed(2) : null,
         total_price: l.unitCents != null ? fromCents(l.unitCents * l.quantity).toFixed(2) : null,
         sale_percent: l.salePercent ?? null,
+        seller: l.seller ? { id: l.seller.id, store_name: l.seller.store_name, is_platform: l.seller.is_platform } : null,
     })),
     problems: quote.problems,
     coupon: quote.coupon ? { code: quote.coupon.code, type: quote.coupon.type, description: quote.coupon.description } : null,
     coupon_error: quote.couponError,
     shipping_zone: quote.zone ? { id: quote.zone.id, name: quote.zone.name } : null,
     tax_rate: quote.taxRate,
-    totals: Object.fromEntries(Object.entries(quote.totals).map(([k, v]) => [k, fromCents(v).toFixed(2)])),
+    totals: {
+        ...Object.fromEntries(Object.entries(quote.totals).map(([k, v]) => [k, fromCents(v).toFixed(2)])),
+        credits_applied: fromCents(quote.credits.applied).toFixed(2),
+        amount_due: fromCents(quote.credits.due).toFixed(2),
+    },
+    credit_balance: fromCents(quote.credits.balance).toFixed(2),
 })
 
 /**
@@ -162,12 +178,17 @@ export const serializeQuote = (quote) => ({
  * Throws Error("CODE:detail") for business failures; the controller maps them.
  * Returns { order, stockChanges } (stockChanges feeds low-stock alerts after commit).
  */
-export const placeOrder = async (tx, { userId = null, email, lines, address = null, shippingAddressText, couponCode = null, paymentMethod }) => {
-    const quote = await buildQuote({ db: tx, userId, email, lines, address, couponCode })
+export const placeOrder = async (tx, { userId = null, email, lines, address = null, shippingAddressText, couponCode = null, paymentMethod, useCredits = false }) => {
+    const quote = await buildQuote({ db: tx, userId, email, lines, address, couponCode, useCredits: Boolean(userId) && (useCredits || paymentMethod === "credits") })
     if (quote.problems.length) throw new Error(`UNAVAILABLE:${quote.problems[0]}`)
     if (couponCode && quote.couponError) throw new Error(`COUPON:${quote.couponError}`)
 
-    const { totals, coupon } = quote
+    const { totals, coupon, credits } = quote
+    // Fully covered by store credit: nothing left to pay by card or cash.
+    const paidByCredits = credits.applied > 0 && credits.due === 0
+    if (paymentMethod === "credits" && !paidByCredits) throw new Error("CREDITS:Your store credit doesn't cover this order")
+    const method = paidByCredits ? "credits" : paymentMethod
+
     const order = await tx.order.create({
         data: {
             user_id: userId,
@@ -181,24 +202,49 @@ export const placeOrder = async (tx, { userId = null, email, lines, address = nu
             total_amount: fromCents(totals.total),
             coupon_id: coupon?.id ?? null,
             coupon_code: coupon?.code ?? null,
-            payment_method: paymentMethod,
+            credits_applied: fromCents(credits.applied),
+            payment_method: method,
             payment_status: "unpaid",
             shipping_address: shippingAddressText,
-            items: {
-                create: quote.lines.map((l) => ({
-                    product_id: l.productId,
-                    variant_id: l.variantId,
-                    product_name: l.productName,
-                    variant_name: l.variantName,
-                    quantity: l.quantity,
-                    list_price: fromCents(l.listCents),
-                    unit_price: fromCents(l.unitCents),
-                    total_price: fromCents(l.unitCents * l.quantity),
-                })),
-            },
         },
-        include: { items: true },
     })
+
+    // One shipment per seller, holding that seller's items and their share of the money.
+    // Coupons, shipping and tax stay with the store; sellers earn on the price of their items.
+    const bySeller = new Map()
+    for (const line of quote.lines) {
+        const group = bySeller.get(line.seller.id) ?? { seller: line.seller, lines: [] }
+        group.lines.push(line)
+        bySeller.set(line.seller.id, group)
+    }
+    for (const { seller, lines: sellerLines } of bySeller.values()) {
+        const rate = seller.is_platform ? 0 : Number(seller.commission_rate ?? quote.commissionRate)
+        const subtotalCents = sellerLines.reduce((sum, l) => sum + l.unitCents * l.quantity, 0)
+        const commissionCents = Math.round((subtotalCents * rate) / 100)
+        await tx.sellerOrder.create({
+            data: {
+                order_id: order.id,
+                seller_id: seller.id,
+                subtotal: fromCents(subtotalCents),
+                commission_rate: rate,
+                commission_amount: fromCents(commissionCents),
+                seller_earnings: fromCents(subtotalCents - commissionCents),
+                items: {
+                    create: sellerLines.map((l) => ({
+                        order_id: order.id,
+                        product_id: l.productId,
+                        variant_id: l.variantId,
+                        product_name: l.productName,
+                        variant_name: l.variantName,
+                        quantity: l.quantity,
+                        list_price: fromCents(l.listCents),
+                        unit_price: fromCents(l.unitCents),
+                        total_price: fromCents(l.unitCents * l.quantity),
+                    })),
+                },
+            },
+        })
+    }
 
     const stockChanges = []
     for (const line of quote.lines) {
@@ -221,16 +267,32 @@ export const placeOrder = async (tx, { userId = null, email, lines, address = nu
 
     await recordStatusChange(tx, { orderId: order.id, to: "pending", actorType: "customer", actorUserId: userId })
 
+    if (credits.applied > 0) {
+        try {
+            await changeCredits(tx, { userId, amountCents: -credits.applied, type: "order_payment", orderId: order.id, note: `Order #${order.id}` })
+        } catch (err) {
+            if (err.message === "INSUFFICIENT_CREDITS") throw new Error("CREDITS:Your store credit balance changed. Please review your order again.")
+            throw err
+        }
+    }
+    let placed = order
+    if (paidByCredits) {
+        placed = await tx.order.update({ where: { id: order.id }, data: { payment_status: "paid", paid_at: new Date(), status: "confirmed" } })
+        await recordStatusChange(tx, { orderId: order.id, from: "pending", to: "confirmed", actorType: "payment", note: "Paid with store credit" })
+    }
+
     if (userId) {
         const cart = await tx.cart.findUnique({ where: { user_id: userId } })
         if (cart) await tx.cartItem.deleteMany({ where: { cart_id: cart.id } })
     }
-    return { order, stockChanges }
+    const full = await tx.order.findUnique({ where: { id: placed.id }, include: { items: true } })
+    return { order: full, stockChanges }
 }
 
 /**
- * Cancels an order inside `tx`: puts its stock back and frees its coupon use.
- * Does not touch payments; callers refund first when needed.
+ * Cancels an order inside `tx`: puts its stock back, frees its coupon use, cancels every
+ * seller's shipment and, for an order that was never paid, gives back the store credit it held.
+ * Does not touch card/cash payments; callers refund paid orders first (issueRefund).
  * Returns { order, restocked } (restocked feeds back-in-stock emails after commit).
  */
 export const cancelOrderInTx = async (tx, { order, actorType, actorUserId = null, note = null }) => {
@@ -241,6 +303,12 @@ export const cancelOrderInTx = async (tx, { order, actorType, actorUserId = null
     if (redemption) {
         await tx.couponRedemption.delete({ where: { id: redemption.id } })
         await tx.coupon.updateMany({ where: { id: redemption.coupon_id, times_used: { gt: 0 } }, data: { times_used: { decrement: 1 } } })
+    }
+
+    await cancelShipments(tx, order.id)
+    const creditsHeld = toCents(order.credits_applied ?? 0)
+    if (creditsHeld > 0 && order.payment_status === "unpaid" && order.user_id) {
+        await changeCredits(tx, { userId: order.user_id, amountCents: creditsHeld, type: "order_cancel", orderId: order.id, note: `Order #${order.id} cancelled` })
     }
 
     const updated = await tx.order.update({

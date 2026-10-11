@@ -205,10 +205,13 @@ export const updateReturnStatus = async (req, res) => {
     }
 }
 
-// POST /admin/returns/:returnId/refund   body: { amount? }  (defaults to the suggested amount)
+// POST /admin/returns/:returnId/refund   body: { amount?, destination? }
+// amount defaults to the suggested amount; destination "original" (default) or "credits"
 export const refundReturn = async (req, res) => {
     const returnId = parseId(req.params.returnId)
     if (!returnId) return res.status(400).json({ message: "invalid return id" })
+    const destination = req.body.destination ?? "original"
+    if (!["original", "credits"].includes(destination)) return res.status(400).json({ message: "destination must be original or credits" })
     try {
         const request = await prisma.returnRequest.findUnique({ where: { id: returnId }, include: { items: { include: { order_item: true } }, order: true } })
         if (!request) return res.status(404).json({ message: "Return not found" })
@@ -223,7 +226,7 @@ export const refundReturn = async (req, res) => {
         }
         if (amountCents < 1) return res.status(400).json({ message: "Nothing left to refund on this order" })
 
-        const { refund } = await issueRefund({ orderId: request.order_id, amountCents, reason: `Return #${request.id}`, returnId: request.id, actorUserId: Number(req.user.sub) })
+        const { refund } = await issueRefund({ orderId: request.order_id, amountCents, reason: `Return #${request.id}`, returnId: request.id, destination, actorUserId: Number(req.user.sub) })
         const updated = await prisma.returnRequest.update({
             where: { id: returnId },
             data: { status: "REFUNDED", refund_amount: fromCents(amountCents) },

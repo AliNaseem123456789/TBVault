@@ -2,13 +2,15 @@ import { useCallback, useEffect, useState } from 'react';
 import Button from '../../components/ui/Button';
 import Icon from '../../components/ui/Icon';
 import { getImageUrl } from '../../utils/product';
-import { listProducts } from '../../api/admin.api';
+import { useCatalogApi } from './catalogContext';
 import ProductEditor from './ProductEditor';
 import { errorMessage, formatMoney } from './adminUtils';
 
 const PAGE_SIZE = 20;
 
-const AdminProducts = ({ categories }) => {
+/** Product list + editor. Admins see every product (with its seller); sellers see their own (see catalogContext). */
+const AdminProducts = ({ categories, brands = [], showSeller = false }) => {
+  const { listProducts } = useCatalogApi();
   const [products, setProducts] = useState([]);
   const [meta, setMeta] = useState(null);
   const [page, setPage] = useState(1);
@@ -31,7 +33,7 @@ const AdminProducts = ({ categories }) => {
       setError(errorMessage(err, 'Could not load products'));
       setStatus('error');
     }
-  }, [page, query]);
+  }, [page, query, listProducts]);
 
   useEffect(() => {
     load();
@@ -69,6 +71,7 @@ const AdminProducts = ({ categories }) => {
           key={editing}
           productId={editing === 'new' ? null : editing}
           categories={categories}
+          brands={brands}
           onSaved={load}
           onDeleted={() => {
             setEditing(null);
@@ -89,6 +92,7 @@ const AdminProducts = ({ categories }) => {
               <tr>
                 <th scope="col">Product</th>
                 <th scope="col">Category</th>
+                {showSeller && <th scope="col">Seller</th>}
                 <th scope="col" className="is-num">Price</th>
                 <th scope="col" className="is-num">Stock</th>
                 <th scope="col">Visibility</th>
@@ -106,7 +110,8 @@ const AdminProducts = ({ categories }) => {
                       {p.name}
                     </div>
                   </td>
-                  <td>{p.category?.name}</td>
+                  <td>{p.category?.name}{p.brand ? <span className="admin-muted"> · {p.brand.name}</span> : null}</td>
+                  {showSeller && <td>{p.seller?.is_platform ? <span className="badge badge-muted">Store</span> : p.seller?.store_name}</td>}
                   <td className="is-num">{formatMoney(p.price)}</td>
                   <td className={`is-num ${p.stock === 0 ? 'admin-danger' : ''}`}>{p.stock}</td>
                   <td>{p.is_hidden ? <span className="badge badge-muted">Hidden</span> : <span className="badge badge-secondary">Live</span>}</td>

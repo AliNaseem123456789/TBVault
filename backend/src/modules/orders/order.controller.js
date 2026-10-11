@@ -12,10 +12,12 @@ import { recordStatusChange } from "../../services/orders/order-history.service.
 import { publishOrderEmailEvent } from "../../services/orders/order-events.service.js"
 import { createCheckoutSession, expireCheckoutSession } from "../../services/payments/stripe.service.js"
 import { issueRefund } from "../../services/payments/refund.service.js"
+import { cascadeOrderStatusToShipments } from "../../services/marketplace/seller-orders.service.js"
+import { PUBLIC_SELLER_SELECT } from "../../utils/visibility.js"
 
 const ORDER_IDEMPOTENCY_TTL = 24 * 60 * 60   // remember a finished order for 24h
 const ORDER_PROCESSING_TTL = 5 * 60          // lock while an order is being placed
-const PAYMENT_METHODS = ["cod", "card"]
+const PAYMENT_METHODS = ["cod", "card", "credits"]   // "credits" = paid entirely with store credit
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 // Everything the order pages show: items with their current photo, timeline, refunds, returns.
@@ -28,7 +30,11 @@ const ORDER_DETAIL_INCLUDE = {
     status_history: { orderBy: { created_at: "asc" } },
     refunds: { orderBy: { created_at: "asc" } },
     return_requests: { orderBy: { created_at: "desc" }, include: { items: true } },
+    seller_orders: { orderBy: { id: "asc" }, include: { seller: { select: PUBLIC_SELLER_SELECT } } },
 }
+
+// Shipment fields a customer sees (not the sellers' commission and earnings).
+const toCustomerShipment = ({ commission_rate, commission_amount, seller_earnings, earnings_credited_at, ...shipment }) => shipment
 
 // What a customer (or a guest with the tracking link) may see: no internal ids.
 const toCustomerOrder = (order) => {
@@ -38,6 +44,7 @@ const toCustomerOrder = (order) => {
         ...rest,
         status_history: order.status_history?.map(({ actor_user_id, ...h }) => h),
         refunds: order.refunds?.map(({ stripe_refund_id, created_by, ...r }) => r),
+        seller_orders: order.seller_orders?.map(toCustomerShipment),
     }
 }
 
@@ -54,6 +61,7 @@ const sendCheckoutError = (res, err) => {
     if (code === "INSUFFICIENT_STOCK") return res.status(409).json({ message: `${detail} is out of stock` })
     if (code === "UNAVAILABLE") return res.status(409).json({ message: detail })
     if (code === "COUPON") return res.status(400).json({ message: detail })
+    if (code === "CREDITS") return res.status(400).json({ message: detail })
     if (code === "BLOCKED") return res.status(403).json({ message: "This account can't place orders. Please contact support." })
     return null
 }
@@ -156,7 +164,7 @@ export const quoteOrder = async (req, res) => {
         if (userId) email = (await prisma.user.findUnique({ where: { id: userId }, select: { email: true } }))?.email
         else if (typeof req.body.email === "string" && EMAIL_RE.test(req.body.email.trim())) email = req.body.email.trim().toLowerCase()
 
-        const quote = await buildQuote({ userId, email, lines, address, couponCode })
+        const quote = await buildQuote({ userId, email, lines, address, couponCode, useCredits: req.body.use_credits === true })
         return res.status(200).json({
             message: "Quote",
             data: { ...serializeQuote(quote), card_payments_enabled: isCardPaymentEnabled() },
@@ -171,7 +179,7 @@ export const quoteOrder = async (req, res) => {
  * Shared by createOrder (signed in) and createGuestOrder: idempotency, placing the
  * order, starting card payment, and the follow-up emails/alerts.
  */
-const submitOrder = async (req, res, { userId, email, lines, address, shippingText, couponCode, paymentMethod, idempotencyScope }) => {
+const submitOrder = async (req, res, { userId, email, lines, address, shippingText, couponCode, paymentMethod, useCredits = false, idempotencyScope }) => {
     const idempotencyKey = req.headers["idempotency-key"]
     if (!idempotencyKey || String(idempotencyKey).length > 100) {
         return res.status(400).json({ message: "Idempotency-Key header is missing" })
@@ -196,11 +204,12 @@ const submitOrder = async (req, res, { userId, email, lines, address, shippingTe
                 if (!user || user.is_blocked) throw new Error("BLOCKED")
             }
             if (lines.length === 0) throw new Error("CART_EMPTY")
-            return placeOrder(tx, { userId, email, lines, address, shippingAddressText: shippingText, couponCode, paymentMethod })
+            return placeOrder(tx, { userId, email, lines, address, shippingAddressText: shippingText, couponCode, paymentMethod, useCredits })
         })
 
         let checkoutUrl = null
-        if (paymentMethod === "card") {
+        // placeOrder switches the method to "credits" when store credit covers everything.
+        if (order.payment_method === "card") {
             const viewUrl = userId
                 ? `${process.env.FRONTEND_URL}/orders/${order.id}`
                 : `${process.env.FRONTEND_URL}/track/${order.public_token}`
@@ -247,8 +256,9 @@ export const createOrder = async (req, res) => {
     if (!user_id) return res.status(401).json({ message: "Unauthorized" })
 
     const paymentMethod = req.body.payment_method ?? "cod"
-    if (!PAYMENT_METHODS.includes(paymentMethod)) return res.status(400).json({ message: "payment_method must be cod or card" })
+    if (!PAYMENT_METHODS.includes(paymentMethod)) return res.status(400).json({ message: "payment_method must be cod, card or credits" })
     if (paymentMethod === "card" && !isCardPaymentEnabled()) return res.status(400).json({ message: "Card payments aren't available" })
+    if (req.body.use_credits !== undefined && typeof req.body.use_credits !== "boolean") return res.status(400).json({ message: "use_credits must be true or false" })
     const couponCode = parseCouponCode(req.body.coupon_code)
     if (couponCode === undefined) return res.status(400).json({ message: "invalid coupon code" })
 
@@ -266,6 +276,7 @@ export const createOrder = async (req, res) => {
             shippingText: resolved.text,
             couponCode,
             paymentMethod,
+            useCredits: req.body.use_credits === true,
             idempotencyScope: `user:${user_id}`,
         })
     } catch (err) {
@@ -286,7 +297,7 @@ export const createGuestOrder = async (req, res) => {
     if (error) return res.status(400).json({ message: error })
 
     const paymentMethod = req.body.payment_method ?? "cod"
-    if (!PAYMENT_METHODS.includes(paymentMethod)) return res.status(400).json({ message: "payment_method must be cod or card" })
+    if (!["cod", "card"].includes(paymentMethod)) return res.status(400).json({ message: "payment_method must be cod or card" })
     if (paymentMethod === "card" && !isCardPaymentEnabled()) return res.status(400).json({ message: "Card payments aren't available" })
     const couponCode = parseCouponCode(req.body.coupon_code)
     if (couponCode === undefined) return res.status(400).json({ message: "invalid coupon code" })
@@ -429,6 +440,11 @@ export const listAllOrders = async (req, res) => {
     if (status !== undefined && !ORDER_STATUSES.includes(status)) return res.status(400).json({ message: "invalid status" })
 
     const where = status ? { status } : {}
+    if (req.query.sellerId !== undefined) {
+        const sellerId = Number(req.query.sellerId)
+        if (!Number.isInteger(sellerId) || sellerId < 1) return res.status(400).json({ message: "invalid seller id" })
+        where.seller_orders = { some: { seller_id: sellerId } }
+    }
     if (search) {
         const asId = Number(search.replace(/^#/, ""))
         where.OR = [
@@ -448,6 +464,7 @@ export const listAllOrders = async (req, res) => {
                 include: {
                     user: { select: { id: true, name: true, email: true } },
                     items: { include: { product: { select: { id: true, name: true } } } },
+                    seller_orders: { select: { id: true, status: true, seller: { select: PUBLIC_SELLER_SELECT } } },
                 },
             }),
             prisma.order.count({ where }),
@@ -535,6 +552,8 @@ export const updateOrderStatus = async (req, res) => {
             }
             const next = await tx.order.update({ where: { id: order.id }, data })
             await recordStatusChange(tx, { orderId: order.id, from: order.status, to: status, actorType: "admin", actorUserId: adminId, note })
+            // Every seller's shipment follows the admin's decision (and delivered orders pay out sellers).
+            await cascadeOrderStatusToShipments(tx, order.id, status, tracking.data)
             return next
         })
 

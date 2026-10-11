@@ -1,5 +1,6 @@
 import prisma from "../../config/db.js"
 import { withSalePricing } from "../../services/pricing/pricing.service.js"
+import { PUBLIC_PRODUCT_WHERE, isPublicProduct } from "../../utils/visibility.js"
 
 const MAX_WISHLIST = 200
 
@@ -8,7 +9,7 @@ export const getWishlist = async (req, res) => {
     const userId = Number(req.user.sub)
     try {
         const items = await prisma.wishlistItem.findMany({
-            where: { user_id: userId, product: { is_hidden: false } },
+            where: { user_id: userId, product: PUBLIC_PRODUCT_WHERE },
             orderBy: { created_at: "desc" },
             include: {
                 product: {
@@ -37,8 +38,8 @@ export const addWishlistItem = async (req, res) => {
     const productId = Number(req.body.product_id)
     if (!Number.isInteger(productId) || productId < 1) return res.status(400).json({ message: "product id is needed" })
     try {
-        const product = await prisma.product.findUnique({ where: { id: productId }, select: { is_hidden: true } })
-        if (!product || product.is_hidden) return res.status(404).json({ message: "Product not found" })
+        const product = await prisma.product.findUnique({ where: { id: productId }, select: { is_hidden: true, seller: { select: { status: true } } } })
+        if (!isPublicProduct(product)) return res.status(404).json({ message: "Product not found" })
         const count = await prisma.wishlistItem.count({ where: { user_id: userId } })
         if (count >= MAX_WISHLIST) return res.status(400).json({ message: `Your wishlist can hold up to ${MAX_WISHLIST} products` })
         const item = await prisma.wishlistItem.upsert({

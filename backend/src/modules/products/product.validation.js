@@ -31,5 +31,13 @@ export const parseProductInput = (body, { partial = false } = {}) => {
         if (!Number.isInteger(category_id) || category_id < 1) return { error: "category_id must be a positive integer" }
         data.category_id = category_id
     }
+    if (has("brand_id")) {
+        if (body.brand_id === null || body.brand_id === "") data.brand_id = null
+        else {
+            const brand_id = Number(body.brand_id)
+            if (!Number.isInteger(brand_id) || brand_id < 1) return { error: "brand_id must be a positive integer or null" }
+            data.brand_id = brand_id
+        }
+    }
     return { data }
 }

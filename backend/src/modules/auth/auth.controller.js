@@ -137,6 +137,8 @@ const PROFILE_FIELDS = {
   role: true,
   is_verified: true,
   password: true,          // only used to compute has_password, never sent
+  credit_balance: true,
+  seller: { select: { id: true, store_name: true, slug: true, status: true } },
   created_at: true,
 }
 

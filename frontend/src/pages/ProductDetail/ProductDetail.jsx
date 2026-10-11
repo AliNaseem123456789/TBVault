@@ -261,6 +261,17 @@ const ProductDetail = () => {
               <Icon name="heart" size={20} className={saved ? 'is-filled' : ''} />
             </button>
           </div>
+          {(product.brand || product.seller) && (
+            <p className="product-detail__seller">
+              {product.brand && <span>by <strong>{product.brand.name}</strong></span>}
+              {product.brand && product.seller && ' · '}
+              {product.seller && (
+                <span>
+                  Sold by <Link to={`/stores/${product.seller.slug}`}>{product.seller.store_name}</Link>
+                </span>
+              )}
+            </p>
+          )}
 
           <div className="product-detail__price">
             {formatMoney(price)}

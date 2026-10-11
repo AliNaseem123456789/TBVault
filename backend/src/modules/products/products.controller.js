@@ -6,17 +6,34 @@ import crypto from "crypto";
 import { withSalePricing } from "../../services/pricing/pricing.service.js";
 import { notifyBackInStock } from "../../services/inventory/inventory.service.js";
 import { parseProductInput } from "./product.validation.js";
+import { PUBLIC_PRODUCT_WHERE, PUBLIC_SELLER_SELECT, isPublicProduct } from "../../utils/visibility.js";
+
+import { ensurePlatformSeller } from "../../services/marketplace/platform-seller.service.js";
+
+// Products added by an admin belong to the store's own (platform) seller unless seller_id is given.
+const platformSellerId = async () => (await ensurePlatformSeller()).id;
 
 
+// POST /products (admin, body.seller_id optional) and POST /seller/products (the seller's own store)
 export const createProducts=async(req,res)=>{
     const { data, error } = parseProductInput(req.body)
     if (error) return res.status(400).json({ message: error })
     try{
+        if (req.seller) {
+            data.seller_id = req.seller.id
+        } else if (req.body.seller_id !== undefined && req.body.seller_id !== null) {
+            const sellerId = Number(req.body.seller_id)
+            const seller = Number.isInteger(sellerId) ? await prisma.seller.findUnique({ where: { id: sellerId }, select: { id: true } }) : null
+            if (!seller) return res.status(400).json({ message: "Seller doesn't exist" })
+            data.seller_id = seller.id
+        } else {
+            data.seller_id = await platformSellerId()
+        }
         const product=await prisma.product.create({ data })
         return res.status(201).json({message:"product Created",data:{product}})
     }catch(err){
         if(err.code==="P2003"){
-            return res.status(400).json({message:"Category doesn't exist"})
+            return res.status(400).json({message:"Category or brand doesn't exist"})
         }
         console.error("createProducts error:",err);
         return res.status(500).json({ message: "Database Error" });
@@ -25,11 +42,13 @@ export const createProducts=async(req,res)=>{
 
 // Admin listing: same filters as the public one, but hidden products are included.
 export const getProductsAdmin = (req, res) => getProductsByCategory(req, res, { includeHidden: true })
+// GET /seller/products — a seller's own products, hidden ones included.
+export const getProductsSeller = (req, res) => getProductsByCategory(req, res, { includeHidden: true, sellerId: req.seller.id })
 
 // GET /products?
 // search=phone&categoryId=2&minPrice=100&maxPrice=1000&inStock=true&sortBy=price
-// &order=asc&page=2&limit=10
-export const getProductsByCategory = async (req, res, { includeHidden = false } = {}) => {
+// &order=asc&page=2&limit=10&brandId=4&sellerId=7
+export const getProductsByCategory = async (req, res, { includeHidden = false, sellerId = null } = {}) => {
   const { search, sortBy, order, inStock } = req.query;
 
   let categoryId;
@@ -52,6 +71,15 @@ export const getProductsByCategory = async (req, res, { includeHidden = false } 
     if (!Number.isInteger(categoryId) || categoryId < 1) {
       return res.status(400).json({message: "invalid Category Id"});
     }
+  }
+  // Brand and seller (store page) filters
+  let brandId;
+  let sellerFilter;
+  for (const [key, label] of [["brandId", "brand"], ["sellerId", "seller"]]) {
+    if (req.query[key] === undefined) continue;
+    const n = Number(req.query[key]);
+    if (!Number.isInteger(n) || n < 1) return res.status(400).json({message: `invalid ${label} id`});
+    if (key === "brandId") brandId = n; else sellerFilter = n;
   }
   // Price validation
   if (req.query.minPrice !== undefined) {
@@ -120,8 +148,11 @@ export const getProductsByCategory = async (req, res, { includeHidden = false } 
     }
   }
   // Build WHERE dynamically
-  // Hidden products are only visible to admins.
-  const where = includeHidden ? {} : { is_hidden: false };
+  // Hidden products (and suspended sellers' products) are only visible to admins and their seller.
+  const where = includeHidden ? {} : { ...PUBLIC_PRODUCT_WHERE };
+  if (sellerId) where.seller_id = sellerId;
+  else if (sellerFilter !== undefined) where.seller_id = sellerFilter;
+  if (brandId !== undefined) where.brand_id = brandId;
  
   if (search) {
     where.OR = [
@@ -183,6 +214,8 @@ export const getProductsByCategory = async (req, res, { includeHidden = false } 
               name: true
             }
           },
+          brand: { select: { id: true, name: true } },
+          seller: { select: PUBLIC_SELLER_SELECT },
         images: {
             orderBy: [
             { is_primary: "desc" },     
@@ -249,6 +282,8 @@ export const getProductsById=async(req,res,{ includeHidden = false } = {})=>{
                 include:{
                     images:{orderBy:[{is_primary:"desc"},{created_at:"asc"}]},
                     category:{select:{id:true,name:true}},
+                    brand:{select:{id:true,name:true}},
+                    seller:{select:{...PUBLIC_SELLER_SELECT,status:true}},
                     variants:{
                         where: includeHidden ? {} : { is_active: true },
                         orderBy:[{sort_order:"asc"},{id:"asc"}],
@@ -256,7 +291,7 @@ export const getProductsById=async(req,res,{ includeHidden = false } = {})=>{
                 }
             }
         )
-        if (!product || (product.is_hidden && !includeHidden)) {
+        if (!product || (!includeHidden && !isPublicProduct(product))) {
          return res.status(404).json({ message: "Product not found" });
             }
         return res.status(200).json({message:"product found",data:{product: await withSalePricing(product)}})
@@ -283,7 +318,7 @@ export const updateProductsById=async(req,res)=>{
             return res.status(404).json({message:"Product doesnt Exist"})
         }
         if(err.code==="P2003"){
-            return res.status(400).json({message:"Category doesn't exist"})
+            return res.status(400).json({message:"Category or brand doesn't exist"})
         }
     console.error("updateProductsById error:",err)
     return res.status(500).json({message:"Database Error"})
@@ -492,14 +527,16 @@ export const getRelatedProducts = async (req, res) => {
   if (!Number.isInteger(limit) || limit < 1 || limit > 12) return res.status(400).json({ message: "invalid limit" });
   const include = {
     category: { select: { id: true, name: true } },
+    brand: { select: { id: true, name: true } },
+    seller: { select: PUBLIC_SELLER_SELECT },
     images: { orderBy: [{ is_primary: "desc" }, { created_at: "asc" }], take: 2 },
     variants: { where: { is_active: true }, select: { id: true, name: true, price: true, stock: true, is_active: true } },
   };
   try {
-    const product = await prisma.product.findUnique({ where: { id }, select: { category_id: true, is_hidden: true } });
-    if (!product || product.is_hidden) return res.status(404).json({ message: "Product not found" });
+    const product = await prisma.product.findUnique({ where: { id }, select: { category_id: true, is_hidden: true, seller: { select: { status: true } } } });
+    if (!isPublicProduct(product)) return res.status(404).json({ message: "Product not found" });
     const sameCategory = await prisma.product.findMany({
-      where: { category_id: product.category_id, is_hidden: false, id: { not: id } },
+      where: { ...PUBLIC_PRODUCT_WHERE, category_id: product.category_id, id: { not: id } },
       orderBy: { created_at: "desc" },
       take: limit,
       include,
@@ -507,7 +544,7 @@ export const getRelatedProducts = async (req, res) => {
     let related = sameCategory;
     if (related.length < limit) {
       const others = await prisma.product.findMany({
-        where: { is_hidden: false, id: { notIn: [id, ...related.map((p) => p.id)] } },
+        where: { ...PUBLIC_PRODUCT_WHERE, id: { notIn: [id, ...related.map((p) => p.id)] } },
         orderBy: { created_at: "desc" },
         take: limit - related.length,
         include,

@@ -1,5 +1,6 @@
 import prisma from "../../config/db.js"
 import { parseReviewInput } from "./review.validation.js"
+import { PUBLIC_PRODUCT_WHERE, isPublicProduct } from "../../utils/visibility.js"
 
 const parseId = (value) => {
     const id = Number(value)
@@ -27,8 +28,8 @@ export const getProductReviews = async (req, res) => {
     if (!Number.isInteger(limit) || limit < 1 || limit > 50) return res.status(400).json({ message: "invalid limit" })
 
     try {
-        const product = await prisma.product.findUnique({ where: { id: productId }, select: { is_hidden: true } })
-        if (!product || product.is_hidden) return res.status(404).json({ message: "Product not found" })
+        const product = await prisma.product.findUnique({ where: { id: productId }, select: { is_hidden: true, seller: { select: { status: true } } } })
+        if (!isPublicProduct(product)) return res.status(404).json({ message: "Product not found" })
 
         const [reviews, stats, breakdown] = await Promise.all([
             prisma.review.findMany({
@@ -105,8 +106,8 @@ export const createReview = async (req, res) => {
     if (error) return res.status(400).json({ message: error })
 
     try {
-        const product = await prisma.product.findUnique({ where: { id: productId }, select: { is_hidden: true } })
-        if (!product || product.is_hidden) return res.status(404).json({ message: "Product not found" })
+        const product = await prisma.product.findUnique({ where: { id: productId }, select: { is_hidden: true, seller: { select: { status: true } } } })
+        if (!isPublicProduct(product)) return res.status(404).json({ message: "Product not found" })
 
         if (!(await hasPurchased(userId, productId))) {
             return res.status(403).json({ message: "You can review products you've ordered" })
@@ -173,7 +174,7 @@ export const getFeaturedReviews = async (req, res) => {
     if (!Number.isInteger(limit) || limit < 1 || limit > 20) return res.status(400).json({ message: "invalid limit" })
     try {
         const reviews = await prisma.review.findMany({
-            where: { rating: { gte: 4 }, comment: { not: null }, is_hidden: false, product: { is_hidden: false } },
+            where: { rating: { gte: 4 }, comment: { not: null }, is_hidden: false, product: PUBLIC_PRODUCT_WHERE },
             orderBy: { created_at: "desc" },
             take: limit,
             select: { ...REVIEW_SELECT, product: { select: { id: true, name: true } } },

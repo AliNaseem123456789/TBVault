@@ -7,6 +7,14 @@ import Button from '../../components/ui/Button';
 import Icon from '../../components/ui/Icon';
 import AddressBook from '../addresses/AddressBook';
 import { useWishlist } from '../wishlist/WishlistProvider';
+import { formatMoney } from '../../utils/money';
+
+const SELLING_TEXT = {
+  PENDING: 'Your seller application is being reviewed.',
+  APPROVED: 'Manage your products, orders and earnings.',
+  REJECTED: "Your application wasn't approved. You can apply again.",
+  SUSPENDED: 'Your store is suspended. Contact us for details.',
+};
 import '../addresses/Addresses.css';
 import './Profile.css';
 
@@ -224,6 +232,26 @@ const Profile = () => {
           <p>{wishlistCount > 0 ? `${wishlistCount} saved product${wishlistCount === 1 ? '' : 's'}.` : 'Nothing saved yet.'}</p>
           <Button to="/wishlist" variant="ghost">
             View wishlist
+          </Button>
+        </section>
+
+        <section className="card profile-card">
+          <h3>
+            <Icon name="wallet" size={18} /> Store credit
+          </h3>
+          <p>{Number(user?.credit_balance) > 0 ? `${formatMoney(user.credit_balance)} to spend at checkout.` : 'Add credit, redeem gift cards and see refunds.'}</p>
+          <Button to="/wallet" variant="ghost">
+            Open wallet
+          </Button>
+        </section>
+
+        <section className="card profile-card">
+          <h3>
+            <Icon name="store" size={18} /> Selling
+          </h3>
+          <p>{SELLING_TEXT[user?.seller?.status] ?? 'Open your own store on TBVault.'}</p>
+          <Button to={user?.seller?.status === 'APPROVED' ? '/seller' : '/sell'} variant="ghost">
+            {user?.seller?.status === 'APPROVED' ? 'Seller dashboard' : user?.seller ? 'See status' : 'Start selling'}
           </Button>
         </section>
 

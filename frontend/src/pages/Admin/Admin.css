@@ -197,3 +197,7 @@
   .admin-two-col, .admin-order-panel__grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 767px) { .admin-form--compact { grid-template-columns: 1fr; } }
+
+/* ---------- Marketplace & store credit ---------- */
+.admin-pre { white-space: pre-line; color: var(--color-ink-muted); font-size: var(--text-sm); }
+.admin-codes { font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--text-sm); white-space: pre; overflow-x: auto; margin-top: var(--space-2); }

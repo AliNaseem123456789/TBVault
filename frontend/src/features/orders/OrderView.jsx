@@ -63,6 +63,8 @@ const OrderView = ({ order, actions, invoiceTo, backLink, justPlaced = false, pa
   const unpaidCard = order.payment_method === 'card' && order.payment_status === 'unpaid' && order.status === 'pending';
   const hasTracking = order.tracking_number || order.tracking_url;
   const refunds = order.refunds ?? [];
+  // Orders with items from several sellers arrive in several parcels.
+  const marketplaceShipments = (order.seller_orders ?? []).filter((so) => so.status !== 'cancelled' || order.status === 'cancelled');
 
   return (
     <div className="order-detail container">
@@ -114,6 +116,24 @@ const OrderView = ({ order, actions, invoiceTo, backLink, justPlaced = false, pa
 
       <section className="card order-detail__progress">
         <OrderTimeline order={order} />
+        {marketplaceShipments.length > 1 && (
+          <ul className="order-detail__shipments">
+            {marketplaceShipments.map((so) => (
+              <li key={so.id}>
+                <span>
+                  <Icon name="store" size={16} /> {so.seller?.is_platform ? 'Shipped by us' : `From ${so.seller?.store_name}`}
+                </span>
+                <span className={`badge ${statusBadgeClass(so.status)}`}>{so.status}</span>
+                {so.tracking_number && (
+                  <span className="order-detail__muted">
+                    {so.tracking_carrier ? `${so.tracking_carrier} · ` : ''}
+                    {so.tracking_url ? <a href={so.tracking_url} target="_blank" rel="noopener noreferrer">{so.tracking_number}</a> : so.tracking_number}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
         {hasTracking && (
           <div className="order-detail__tracking">
             <Icon name="truck" size={18} />
@@ -165,9 +185,12 @@ const OrderView = ({ order, actions, invoiceTo, backLink, justPlaced = false, pa
             <div><dt>Shipping</dt><dd>{Number(order.shipping_total) > 0 ? formatMoney(order.shipping_total) : 'Free'}</dd></div>
             {Number(order.tax_total) > 0 && <div><dt>Tax</dt><dd>{formatMoney(order.tax_total)}</dd></div>}
             <div className="order-detail__total"><dt>Total</dt><dd>{formatMoney(order.total_amount)}</dd></div>
+            {Number(order.credits_applied) > 0 && (
+              <div className="is-discount"><dt>Paid with store credit</dt><dd>{formatMoney(order.credits_applied)}</dd></div>
+            )}
             {refunds.map((r) => (
               <div key={r.id} className="is-refund">
-                <dt>Refund · {formatOrderDate(r.created_at)}{r.status === 'pending' ? ' (processing)' : ''}</dt>
+                <dt>Refund{r.method === 'credits' ? ' to store credit' : ''} · {formatOrderDate(r.created_at)}{r.status === 'pending' ? ' (processing)' : ''}</dt>
                 <dd>−{formatMoney(r.amount)}</dd>
               </div>
             ))}

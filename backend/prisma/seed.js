@@ -12,6 +12,7 @@
 import "dotenv/config";
 import bcrypt from "bcrypt";
 import prisma from "../src/config/db.js";
+import { ensurePlatformSeller } from "../src/services/marketplace/platform-seller.service.js";
 
 const CATEGORIES = ["Audio", "Accessories", "Home", "Wearables"];
 
@@ -63,6 +64,7 @@ async function seedCatalog() {
   }
   console.log(`• ${CATEGORIES.length} categories`);
 
+  const platform = await ensurePlatformSeller(prisma);
   let created = 0;
   for (const p of PRODUCTS) {
     // Product names aren't unique in the schema, so check before creating.
@@ -71,6 +73,7 @@ async function seedCatalog() {
     await prisma.product.create({
       data: {
         name: p.name, description: p.description, price: p.price, stock: p.stock, category_id: categoryIds[p.category],
+        seller_id: platform.id,
         ...(p.variants ? { variants: { create: p.variants } } : {}),
       },
     });

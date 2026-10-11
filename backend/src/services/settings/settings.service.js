@@ -14,6 +14,8 @@ export const SETTINGS = {
     return_window_days: { type: "int", default: 30, public: true, min: 0, max: 365 },
     low_stock_threshold: { type: "int", default: 5, public: false, min: 0, max: 100000 },
     alert_email: { type: "string", default: "", public: false, max: 255 },
+    // Marketplace: the store's cut of each seller sale, in percent (a seller can have their own rate).
+    commission_rate: { type: "number", default: 10, public: false, min: 0, max: 90 },
 }
 
 const parse = (key, raw) => {

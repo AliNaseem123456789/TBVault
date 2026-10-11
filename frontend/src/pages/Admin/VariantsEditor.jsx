@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import Button from '../../components/ui/Button';
-import { listVariants, createVariant, updateVariant, deleteVariant } from '../../api/admin.api';
+import { useCatalogApi } from './catalogContext';
 import { errorMessage } from './adminUtils';
 
 const EMPTY = { name: '', sku: '', price: '', stock: '0' };
@@ -52,6 +52,7 @@ const VariantRow = ({ variant, basePrice, onSave, onDelete }) => {
  * empty to use the product's price.
  */
 const VariantsEditor = ({ productId, basePrice, onChange }) => {
+  const { listVariants, createVariant, updateVariant, deleteVariant } = useCatalogApi();
   const [variants, setVariants] = useState([]);
   const [draft, setDraft] = useState(EMPTY);
   const [error, setError] = useState('');
@@ -64,7 +65,7 @@ const VariantsEditor = ({ productId, basePrice, onChange }) => {
     } catch (err) {
       setError(errorMessage(err, 'Could not load options'));
     }
-  }, [productId]);
+  }, [productId, listVariants]);
 
   useEffect(() => {
     load();

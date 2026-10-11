@@ -3,9 +3,67 @@ import Button from '../../components/ui/Button';
 import Icon from '../../components/ui/Icon';
 import { listCustomers, getCustomer, setCustomerBlocked } from '../../api/admin.api';
 import { errorMessage, formatMoney } from './adminUtils';
-import { formatOrderDate, statusBadgeClass, paymentLabel } from '../../utils/order';
+import { formatOrderDate, formatOrderDateTime, statusBadgeClass, paymentLabel } from '../../utils/order';
+import { getCustomerCredits, adjustCustomerCredits } from '../../api/wallet.api';
+import { CREDIT_TYPE_LABELS } from '../../utils/wallet';
 
 const PAGE_SIZE = 20;
+
+// Balance, add/remove credit with a reason, and the latest movements.
+const CreditsSection = ({ userId }) => {
+  const [credits, setCredits] = useState(null);
+  const [form, setForm] = useState({ amount: '', note: '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    const res = await getCustomerCredits(userId, { limit: 8 });
+    setCredits(res.data);
+  }, [userId]);
+
+  useEffect(() => {
+    load().catch((err) => setError(errorMessage(err, 'Could not load store credit')));
+  }, [load]);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    const amount = Number(form.amount);
+    if (!window.confirm(`${amount > 0 ? 'Add' : 'Remove'} ${formatMoney(Math.abs(amount))} ${amount > 0 ? 'to' : 'from'} this customer's store credit?`)) return;
+    setBusy(true);
+    setError('');
+    try {
+      await adjustCustomerCredits(userId, amount, form.note);
+      setForm({ amount: '', note: '' });
+      await load();
+    } catch (err) {
+      setError(errorMessage(err, 'Could not change the credit'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section>
+      <h4>Store credit: {credits ? formatMoney(credits.balance) : '…'}</h4>
+      <form className="admin-inline-form admin-inline-form--wrap" onSubmit={submit}>
+        <input className="input" type="number" step="0.01" placeholder="Amount (−5 to remove)" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} aria-label="Credit amount" required />
+        <input className="input" placeholder="Reason (shown in their history)" maxLength={500} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} aria-label="Reason" required />
+        <Button type="submit" size="sm" variant="ghost" disabled={busy || !Number(form.amount)}>{busy ? 'Saving…' : 'Apply'}</Button>
+      </form>
+      {error && <p className="form-alert form-alert-error">{error}</p>}
+      {credits?.transactions.length > 0 && (
+        <ul className="admin-order-panel__items">
+          {credits.transactions.map((t) => (
+            <li key={t.id}>
+              <span>{CREDIT_TYPE_LABELS[t.type] ?? t.type}{t.note ? ` · ${t.note}` : ''} <span className="admin-muted">· {formatOrderDateTime(t.created_at)}</span></span>
+              <span className={Number(t.amount) < 0 ? 'admin-danger' : ''}>{Number(t.amount) > 0 ? '+' : '−'}{formatMoney(Math.abs(Number(t.amount)))}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+};
 
 const CustomerPanel = ({ userId }) => {
   const [customer, setCustomer] = useState(null);
@@ -36,7 +94,9 @@ const CustomerPanel = ({ userId }) => {
         ))}
         <h4>Activity</h4>
         <p className="admin-muted">{customer._count.reviews} reviews · {customer._count.return_requests} returns · joined {formatOrderDate(customer.created_at)}</p>
+        {customer.seller && <p className="admin-muted">Seller account: {customer.seller.store_name} ({customer.seller.status.toLowerCase()})</p>}
       </section>
+      <CreditsSection userId={userId} />
     </div>
   );
 };
@@ -97,7 +157,7 @@ const AdminCustomers = () => {
       <div className="admin-table-wrap card">
         <table className="admin-table">
           <thead>
-            <tr><th scope="col">Customer</th><th scope="col">Joined</th><th scope="col" className="is-num">Orders</th><th scope="col" className="is-num">Spent</th><th scope="col">Last order</th><th scope="col">Status</th><th scope="col"><span className="sr-only">Actions</span></th></tr>
+            <tr><th scope="col">Customer</th><th scope="col">Joined</th><th scope="col" className="is-num">Orders</th><th scope="col" className="is-num">Spent</th><th scope="col" className="is-num">Credit</th><th scope="col">Last order</th><th scope="col">Status</th><th scope="col"><span className="sr-only">Actions</span></th></tr>
           </thead>
           <tbody>
             {customers.map((c) => (
@@ -112,9 +172,10 @@ const AdminCustomers = () => {
                   <td>{formatOrderDate(c.created_at)}</td>
                   <td className="is-num">{c.order_count}</td>
                   <td className="is-num">{formatMoney(c.total_spent)}</td>
+                  <td className="is-num">{Number(c.credit_balance) > 0 ? formatMoney(c.credit_balance) : '—'}</td>
                   <td>{c.last_order_at ? formatOrderDate(c.last_order_at) : '—'}</td>
                   <td>
-                    {c.is_blocked ? <span className="badge badge-danger">blocked</span> : c.role === 'ADMIN' ? <span className="badge">admin</span> : <span className="badge badge-muted">{c.is_verified ? 'verified' : 'unverified'}</span>}
+                    {c.is_blocked ? <span className="badge badge-danger">blocked</span> : c.role === 'ADMIN' ? <span className="badge">admin</span> : c.role === 'SELLER' ? <span className="badge badge-secondary">seller</span> : <span className="badge badge-muted">{c.is_verified ? 'verified' : 'unverified'}</span>}
                   </td>
                   <td className="admin-row-actions">
                     {c.role !== 'ADMIN' && (
@@ -125,7 +186,7 @@ const AdminCustomers = () => {
                   </td>
                 </tr>
                 {expanded === c.id && (
-                  <tr className="admin-table__detail"><td colSpan={7}><CustomerPanel userId={c.id} /></td></tr>
+                  <tr className="admin-table__detail"><td colSpan={8}><CustomerPanel userId={c.id} /></td></tr>
                 )}
               </Fragment>
             ))}

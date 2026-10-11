@@ -41,6 +41,7 @@ const Checkout = () => {
   const [newAddress, setNewAddress] = useState(EMPTY_ADDRESS);
   const [saveAddress, setSaveAddress] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState('cod');
+  const [useCredits, setUseCredits] = useState(false);
   const [couponInput, setCouponInput] = useState('');
   const [couponCode, setCouponCode] = useState('');
 
@@ -80,6 +81,7 @@ const Checkout = () => {
     items.map((i) => [i.product_id, i.variant_id, i.quantity]),
     addressPayload.address_id ?? [newAddress.city, newAddress.state, newAddress.country],
     couponCode,
+    useCredits,
   ]);
 
   useEffect(() => {
@@ -92,6 +94,7 @@ const Checkout = () => {
           ...(isGuest ? { items: items.map((i) => ({ product_id: i.product_id, variant_id: i.variant_id, quantity: i.quantity })), email } : {}),
           ...(addressPayload.address_id ? { address_id: addressPayload.address_id } : { address: newAddress }),
           ...(couponCode ? { coupon_code: couponCode } : {}),
+          ...(!isGuest && useCredits ? { use_credits: true } : {}),
         };
         const res = await quoteOrder(body);
         if (alive) setQuote(res.data);
@@ -105,9 +108,12 @@ const Checkout = () => {
       alive = false;
       clearTimeout(timer);
     };
-    // quoteKey covers items, address region and coupon.
+    // quoteKey covers items, address region, coupon and store credit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteKey]);
+
+  // Store credit pays everything: no card or cash needed.
+  const coveredByCredit = !isGuest && useCredits && Number(quote?.totals?.credits_applied ?? 0) > 0 && Number(quote?.totals?.amount_due ?? 1) === 0;
 
   const applyCoupon = (e) => {
     e.preventDefault();
@@ -131,7 +137,8 @@ const Checkout = () => {
     try {
       const common = {
         coupon_code: quote?.coupon ? couponCode : undefined,
-        payment_method: paymentMethod,
+        payment_method: coveredByCredit ? 'credits' : paymentMethod,
+        ...(!isGuest && useCredits ? { use_credits: true } : {}),
       };
       let res;
       if (isGuest) {
@@ -183,7 +190,10 @@ const Checkout = () => {
   const totals = quote?.totals;
   const quoteItems = quote?.items ?? [];
   const blocked = Boolean(quote?.problems?.length);
-  const payLabel = paymentMethod === 'card' ? 'Continue to payment' : 'Place order';
+  const creditBalance = Number(quote?.credit_balance ?? 0);
+  const creditsApplied = Number(totals?.credits_applied ?? 0);
+  const amountDue = totals ? Number(totals.amount_due ?? totals.total) : 0;
+  const payLabel = coveredByCredit ? 'Pay with store credit' : paymentMethod === 'card' ? 'Continue to payment' : 'Place order';
 
   return (
     <div className="checkout-page container">
@@ -254,6 +264,19 @@ const Checkout = () => {
 
           <section className="card checkout-section">
             <h2><span className="checkout-section__step">3</span> Payment</h2>
+            {!isGuest && creditBalance > 0 && (
+              <label className={`payment-option payment-option--credit ${useCredits ? 'is-selected' : ''}`}>
+                <input type="checkbox" checked={useCredits} onChange={(e) => setUseCredits(e.target.checked)} />
+                <Icon name="wallet" size={18} />
+                <span>
+                  <strong>Use store credit</strong>
+                  <small>{formatMoney(creditBalance)} available{useCredits && creditsApplied > 0 ? ` · ${formatMoney(creditsApplied)} applied` : ''}</small>
+                </span>
+              </label>
+            )}
+            {coveredByCredit ? (
+              <p className="checkout-form__note">Your store credit covers this order — nothing else to pay.</p>
+            ) : (
             <div className="payment-options" role="radiogroup" aria-label="Payment method">
               <label className={`payment-option ${paymentMethod === 'cod' ? 'is-selected' : ''}`}>
                 <input type="radio" name="payment" checked={paymentMethod === 'cod'} onChange={() => setPaymentMethod('cod')} />
@@ -272,15 +295,16 @@ const Checkout = () => {
                 </span>
               </label>
             </div>
+            )}
           </section>
 
           {error && <p className="form-alert form-alert-error">{error}</p>}
 
           <Button type="submit" size="lg" disabled={placing || quoting || blocked || !totals} className="checkout-form__submit">
-            {placing ? 'Placing order…' : totals ? `${payLabel} — ${formatMoney(totals.total)}` : 'Working out your total…'}
+            {placing ? 'Placing order…' : totals ? `${payLabel} — ${formatMoney(coveredByCredit ? creditsApplied : amountDue)}` : 'Working out your total…'}
           </Button>
           <p className="checkout-form__note">
-            {paymentMethod === 'card'
+            {!coveredByCredit && paymentMethod === 'card'
               ? "You'll pay on Stripe's secure page, then come back here."
               : 'You can cancel any time before it ships.'}
           </p>
@@ -301,6 +325,7 @@ const Checkout = () => {
                     <span className="checkout-summary__qty">
                       {item.variant_name ? `${item.variant_name} · ` : ''}Qty {item.quantity}
                     </span>
+                    {item.seller && !item.seller.is_platform && <span className="checkout-summary__qty">Sold by {item.seller.store_name}</span>}
                     {item.problem && <span className="checkout-summary__problem">{item.problem === 'stock' ? (item.stock > 0 ? `Only ${item.stock} left` : 'Out of stock') : 'Unavailable'}</span>}
                   </div>
                   <span className="checkout-summary__price">
@@ -352,6 +377,12 @@ const Checkout = () => {
               <div><dt>Tax ({quote.tax_rate}%)</dt><dd>{formatMoney(totals.tax)}</dd></div>
             )}
             <div className="checkout-summary__total"><dt>Total</dt><dd>{totals ? formatMoney(totals.total) : '—'}</dd></div>
+            {creditsApplied > 0 && (
+              <>
+                <div className="is-discount"><dt>Store credit</dt><dd>−{formatMoney(creditsApplied)}</dd></div>
+                <div className="checkout-summary__total"><dt>To pay</dt><dd>{formatMoney(amountDue)}</dd></div>
+              </>
+            )}
           </dl>
         </aside>
       </div>

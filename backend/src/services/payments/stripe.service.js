@@ -27,7 +27,8 @@ export const createCheckoutSession = async (order, { email, successUrl, cancelUr
                     quantity: 1,
                     price_data: {
                         currency,
-                        unit_amount: toCents(order.total_amount),
+                        // Whatever store credit didn't cover.
+                        unit_amount: toCents(order.total_amount) - toCents(order.credits_applied ?? 0),
                         product_data: {
                             name: `${store_name} order #${order.id}`,
                             description: `${itemCount} item${itemCount === 1 ? "" : "s"}`,
@@ -54,6 +55,35 @@ export const expireCheckoutSession = async (sessionId) => {
         // Already expired or completed; nothing to do.
         if (err?.code !== "resource_missing") console.warn("[stripe] could not expire session:", err.message)
     }
+}
+
+/** Hosted Stripe Checkout page for buying store credit. */
+export const createTopupSession = async (topup, { email, successUrl, cancelUrl }) => {
+    const stripe = getStripe()
+    if (!stripe) throw new Error("CARD_DISABLED")
+    const { currency, store_name } = await getSettings()
+    return stripe.checkout.sessions.create(
+        {
+            mode: "payment",
+            customer_email: email,
+            client_reference_id: `topup-${topup.id}`,
+            metadata: { kind: "wallet_topup", topup_id: String(topup.id), user_id: String(topup.user_id) },
+            line_items: [
+                {
+                    quantity: 1,
+                    price_data: {
+                        currency,
+                        unit_amount: toCents(topup.amount),
+                        product_data: { name: `${store_name} store credit` },
+                    },
+                },
+            ],
+            expires_at: Math.floor(Date.now() / 1000) + SESSION_LIFETIME_SECONDS,
+            success_url: successUrl,
+            cancel_url: cancelUrl,
+        },
+        { idempotencyKey: `topup-${topup.id}` }
+    )
 }
 
 export const refundPayment = async ({ paymentIntentId, amountCents, idempotencyKey, metadata }) => {

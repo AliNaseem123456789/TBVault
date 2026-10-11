@@ -87,6 +87,8 @@ export const AuthProvider = ({ children }) => {
         userLoading,
         isAuthenticated: !!accessToken,
         isAdmin: user?.role === "ADMIN",
+        // An approved marketplace seller (an admin can be one too).
+        isSeller: user?.seller?.status === "APPROVED",
         login,
         signup,
         logout,

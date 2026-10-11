@@ -25,6 +25,10 @@ import Wishlist from "./pages/Wishlist/Wishlist";
 import TrackOrder, { TrackLookup } from "./pages/Track/TrackOrder";
 import Invoice from "./pages/Invoice/Invoice";
 import Unauthorized from "./pages/Unauthorized/Unauthorized";
+import Sell from "./pages/Sell/Sell";
+import SellerDashboard from "./pages/Seller/SellerDashboard";
+import Wallet from "./pages/Wallet/Wallet";
+import StorePage from "./pages/Store/StorePage";
 
 const App = () => {
   return (
@@ -46,6 +50,8 @@ const App = () => {
             <Route path="/checkout" element={<Checkout />} />
             <Route path="/track" element={<TrackLookup />} />
             <Route path="/track/:token" element={<TrackOrder />} />
+            <Route path="/sell" element={<Sell />} />
+            <Route path="/stores/:slug" element={<StorePage />} />
 
             {/* Logged-in pages that are still part of the storefront (keep
                 the Navbar/Footer/cart) nest ProtectedRoute here instead of
@@ -55,6 +61,12 @@ const App = () => {
               <Route path="/wishlist" element={<Wishlist />} />
               <Route path="/orders" element={<Orders />} />
               <Route path="/orders/:id" element={<OrderDetail />} />
+              <Route path="/wallet" element={<Wallet />} />
+            </Route>
+
+            {/* Approved sellers (and admins who also sell). The API checks the seller account on every call. */}
+            <Route element={<ProtectedRoute requireSeller />}>
+              <Route path="/seller" element={<SellerDashboard />} />
             </Route>
 
             {/* Admin only. ProtectedRoute waits for /auth/me before checking the role. */}

@@ -11,6 +11,10 @@ import AdminReturns from './AdminReturns';
 import AdminCustomers from './AdminCustomers';
 import AdminReviews from './AdminReviews';
 import AdminSettings from './AdminSettings';
+import AdminSellers from './AdminSellers';
+import AdminBrands from './AdminBrands';
+import AdminGiftCards from './AdminGiftCards';
+import { getBrands } from '../../api/marketplace.api';
 import './Admin.css';
 
 const TABS = [
@@ -18,10 +22,13 @@ const TABS = [
   { id: 'orders', label: 'Orders' },
   { id: 'returns', label: 'Returns' },
   { id: 'products', label: 'Products' },
+  { id: 'sellers', label: 'Sellers' },
   { id: 'categories', label: 'Categories' },
+  { id: 'brands', label: 'Brands' },
   { id: 'sales', label: 'Sales' },
   { id: 'coupons', label: 'Coupons' },
   { id: 'customers', label: 'Customers' },
+  { id: 'gift-cards', label: 'Gift cards' },
   { id: 'reviews', label: 'Reviews' },
   { id: 'settings', label: 'Settings' },
 ];
@@ -32,6 +39,7 @@ const AdminDashboard = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = TABS.some((t) => t.id === searchParams.get('tab')) ? searchParams.get('tab') : 'overview';
   const [categories, setCategories] = useState([]);
+  const [brands, setBrands] = useState([]);
 
   // Categories are shared by the Products, Sales and Categories tabs.
   const loadCategories = useCallback(async () => {
@@ -43,9 +51,20 @@ const AdminDashboard = () => {
     }
   }, []);
 
+  // Brands are shared by the Products and Brands tabs.
+  const loadBrands = useCallback(async () => {
+    try {
+      const res = await getBrands();
+      setBrands(res.data.brands ?? []);
+    } catch (err) {
+      console.error('Failed to load brands:', err);
+    }
+  }, []);
+
   useEffect(() => {
     loadCategories();
-  }, [loadCategories]);
+    loadBrands();
+  }, [loadCategories, loadBrands]);
 
   return (
     <div className="admin-page container">
@@ -73,11 +92,14 @@ const AdminDashboard = () => {
         {tab === 'overview' && <AdminOverview />}
         {tab === 'orders' && <AdminOrders />}
         {tab === 'returns' && <AdminReturns />}
-        {tab === 'products' && <AdminProducts categories={categories} />}
+        {tab === 'products' && <AdminProducts categories={categories} brands={brands} showSeller />}
+        {tab === 'sellers' && <AdminSellers />}
         {tab === 'categories' && <AdminCategories categories={categories} onChange={loadCategories} />}
+        {tab === 'brands' && <AdminBrands brands={brands} onChange={loadBrands} />}
         {tab === 'sales' && <AdminSales categories={categories} />}
         {tab === 'coupons' && <AdminCoupons />}
         {tab === 'customers' && <AdminCustomers />}
+        {tab === 'gift-cards' && <AdminGiftCards />}
         {tab === 'reviews' && <AdminReviews />}
         {tab === 'settings' && <AdminSettings />}
       </div>

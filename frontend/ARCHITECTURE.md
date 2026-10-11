@@ -177,3 +177,30 @@ tax) come from `POST /order/quote`, and placing an order re-prices it on the
 server. Use `unitPrice()` and `mapProductForCard()` in `utils/product.js` to
 show a product's price, so sale prices and "From $x" for products with
 options look the same everywhere.
+
+## 6. Marketplace and store credit (added October 2026)
+
+**Roles.** `CUSTOMER`, `SELLER`, `ADMIN`. Seller access is decided by an APPROVED row in
+`sellers` (checked on every `/seller/*` request), not only by the role in the token, so
+approving or suspending a seller works immediately. The store's own catalogue belongs to the
+platform seller (`is_platform`), so every product has a seller.
+
+| Who | Pages | API |
+|---|---|---|
+| Anyone | `/sell` (apply / status), `/stores/:slug` | `GET /stores/:slug`, `GET /products?sellerId=&brandId=` |
+| Seller | `/seller` (overview, orders, products, earnings, store) | `/seller/products`, `/seller/orders`, `/seller/dashboard`, `/seller/transactions` |
+| Admin | `/admin` tabs Sellers, Brands, Gift cards; credit in Customers | `/admin/sellers`, `/admin/brands`, `/admin/gift-cards`, `/admin/customers/:id/credits` |
+| Customer | `/wallet`, "Use store credit" at checkout | `/wallet`, `/wallet/topup`, `/wallet/redeem`, `use_credits` on `/order` |
+
+**Split orders.** An order gets one `seller_orders` row per seller (their items, commission
+and earnings). Sellers move their part pending → confirmed → shipped → delivered; the order
+follows the slowest part. Earnings reach the seller's balance once their part is delivered
+and the order is paid; admins record payouts (money sent outside the site).
+
+**Product screens are shared.** `AdminProducts` / `ProductEditor` / `VariantsEditor` read their
+API from `CatalogApiContext` (`pages/Admin/catalogContext.js`): admin endpoints by default,
+`sellerCatalog` inside the seller dashboard.
+
+**Store credit.** `users.credit_balance` changes only together with a `credit_transactions` row
+(`services/wallet/wallet.service.js`). Credit can pay part or all of an order; a card pays the
+rest. Refunds go back the way they were paid, or to store credit when the admin chooses.

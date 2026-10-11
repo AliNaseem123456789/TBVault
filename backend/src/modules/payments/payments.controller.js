@@ -9,6 +9,9 @@ import { recordStatusChange } from "../../services/orders/order-history.service.
 import { publishOrderEmailEvent, orderEmail, orderUrl } from "../../services/orders/order-events.service.js"
 import { notifyBackInStock } from "../../services/inventory/inventory.service.js"
 import { toCents } from "../../utils/pricing.helpers.js"
+import { creditSellerEarnings } from "../../services/marketplace/seller-ledger.service.js"
+import { REFUND_DESTINATIONS } from "../../services/payments/refund.service.js"
+import { markTopupPaid, markTopupExpired } from "../../services/wallet/wallet.service.js"
 
 const parseOrderId = (value) => {
     const id = Number(value)
@@ -76,7 +79,8 @@ const markOrderPaid = async (session) => {
         const order = await tx.order.findUnique({ where: { id: orderId } })
         if (!order || order.payment_status !== "unpaid") return null   // already handled
 
-        const amountMatches = session.amount_total === toCents(order.total_amount)
+        const dueCents = toCents(order.total_amount) - toCents(order.credits_applied)
+        const amountMatches = session.amount_total === dueCents
         await tx.order.update({
             where: { id: order.id },
             data: {
@@ -90,7 +94,7 @@ const markOrderPaid = async (session) => {
         if (order.status === "pending") {
             await recordStatusChange(tx, {
                 orderId: order.id, from: "pending", to: "confirmed", actorType: "payment",
-                note: amountMatches ? "Card payment received" : `Card payment received, but Stripe charged ${session.amount_total / 100} instead of ${order.total_amount}`,
+                note: amountMatches ? "Card payment received" : `Card payment received, but Stripe charged ${session.amount_total / 100} instead of ${dueCents / 100}`,
             })
         } else {
             // Paid after it was cancelled (e.g. the page expired as they paid): flag it for a refund.
@@ -99,6 +103,7 @@ const markOrderPaid = async (session) => {
                 note: "Card payment received after the order was cancelled. Refund it from the admin dashboard.",
             })
         }
+        await creditSellerEarnings(tx, order.id)
         return { wasPending: order.status === "pending" }
     })
     // Card orders get their confirmation email once the money is in, not when the page opens.
@@ -126,11 +131,16 @@ const syncRefund = async (refund) => {
     await prisma.refund.updateMany({ where: { stripe_refund_id: refund.id }, data: { status } })
 }
 
+// Checkout sessions are either order payments or store-credit top-ups (metadata.kind).
+const isTopup = (session) => session.metadata?.kind === "wallet_topup"
+const sessionPaid = (s) => (isTopup(s) ? markTopupPaid(s) : markOrderPaid(s))
+const sessionFailed = (s) => (isTopup(s) ? markTopupExpired(s) : cancelExpiredOrder(s))
+
 const HANDLERS = {
-    "checkout.session.completed": (obj) => (obj.payment_status === "paid" ? markOrderPaid(obj) : null),
-    "checkout.session.async_payment_succeeded": markOrderPaid,
-    "checkout.session.expired": cancelExpiredOrder,
-    "checkout.session.async_payment_failed": cancelExpiredOrder,
+    "checkout.session.completed": (obj) => (obj.payment_status === "paid" ? sessionPaid(obj) : null),
+    "checkout.session.async_payment_succeeded": sessionPaid,
+    "checkout.session.expired": sessionFailed,
+    "checkout.session.async_payment_failed": sessionFailed,
     "refund.updated": syncRefund,
     "refund.created": syncRefund,
 }
@@ -175,7 +185,8 @@ export const rawJson = express.raw({ type: "application/json", limit: "1mb" })
 // ADMIN REFUNDS
 // ==============================
 
-// POST /admin/orders/:orderId/refunds   body: { amount?, reason? }  (amount defaults to the rest)
+// POST /admin/orders/:orderId/refunds   body: { amount?, reason?, destination? }
+// amount defaults to the rest; destination "original" (default) or "credits" (store credit)
 export const refundOrder = async (req, res) => {
     const orderId = parseOrderId(req.params.orderId)
     if (!orderId) return res.status(400).json({ message: "order id missing or invalid" })
@@ -186,9 +197,11 @@ export const refundOrder = async (req, res) => {
         amountCents = toCents(amount)
     }
     const reason = typeof req.body.reason === "string" ? req.body.reason.trim() : null
+    const destination = req.body.destination ?? "original"
+    if (!REFUND_DESTINATIONS.includes(destination)) return res.status(400).json({ message: "destination must be original or credits" })
     try {
-        const { refund, order } = await issueRefund({ orderId, amountCents, reason, actorUserId: Number(req.user.sub) })
-        return res.status(201).json({ message: "Refund issued", data: { refund, order } })
+        const { refund, refunds, order } = await issueRefund({ orderId, amountCents, reason, destination, actorUserId: Number(req.user.sub) })
+        return res.status(201).json({ message: destination === "credits" ? "Refunded to store credit" : "Refund issued", data: { refund, refunds, order } })
     } catch (err) {
         const [code, ...rest] = String(err.message).split(":")
         if (code === "ORDER_NOT_FOUND") return res.status(404).json({ message: "Order not found" })

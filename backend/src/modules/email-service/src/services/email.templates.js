@@ -39,7 +39,7 @@ const RETURN_COPY = {
 };
 
 const money = (value) => `$${esc(value)}`;
-const totalsTable = ({ subtotal, discountTotal, shippingTotal, taxTotal, totalAmount, couponCode }) => {
+const totalsTable = ({ subtotal, discountTotal, shippingTotal, taxTotal, totalAmount, couponCode, creditsApplied }) => {
   const row = (label, value, bold = false) =>
     `<tr><td style="padding:4px 0">${label}</td><td style="padding:4px 0;text-align:right${bold ? ";font-weight:bold" : ""}">${value}</td></tr>`;
   return `<table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:8px">
@@ -48,6 +48,7 @@ const totalsTable = ({ subtotal, discountTotal, shippingTotal, taxTotal, totalAm
     ${shippingTotal !== undefined ? row("Shipping", Number(shippingTotal) > 0 ? money(shippingTotal) : "Free") : ""}
     ${Number(taxTotal) > 0 ? row("Tax", money(taxTotal)) : ""}
     ${row("Total", money(totalAmount), true)}
+    ${Number(creditsApplied) > 0 ? row("Paid with store credit", `−${money(creditsApplied)}`) : ""}
   </table>`;
 };
 
@@ -70,8 +71,9 @@ export const templates = {
     text: `Verify your email: ${verifyUrl}\nExpires in 24 hours.`,
   }),
 
-  orderPlaced: ({ orderId, name, items, subtotal, discountTotal, shippingTotal, taxTotal, totalAmount, couponCode, paymentMethod, shippingAddress, orderUrl }) => {
-    const paidByCard = paymentMethod === "card";
+  orderPlaced: ({ orderId, name, items, subtotal, discountTotal, shippingTotal, taxTotal, totalAmount, couponCode, creditsApplied, paymentMethod, shippingAddress, orderUrl }) => {
+    // Card and store-credit orders are paid by the time this is sent.
+    const paidByCard = paymentMethod === "card" || paymentMethod === "credits";
     return {
       subject: `Order #${orderId} ${paidByCard ? "confirmed" : "received"}`,
       html: layout(
@@ -79,12 +81,12 @@ export const templates = {
         <h2>Thanks for your order${name ? `, ${esc(name)}` : ""}!</h2>
         <p>${paidByCard ? `We've received your payment for order <strong>#${esc(orderId)}</strong>.` : `We've received order <strong>#${esc(orderId)}</strong>. Payment is due on delivery.`}</p>
         ${itemsTable(items)}
-        ${totalsTable({ subtotal, discountTotal, shippingTotal, taxTotal, totalAmount, couponCode })}
+        ${totalsTable({ subtotal, discountTotal, shippingTotal, taxTotal, totalAmount, couponCode, creditsApplied })}
         ${shippingAddress ? `<p style="white-space:pre-line;color:#555">Shipping to:<br>${esc(shippingAddress)}</p>` : ""}
         <p><a href="${esc(orderUrl)}">View or track your order</a></p>`,
         "You're receiving this because you placed an order."
       ),
-      text: `Thanks for your order #${orderId}.\n\n${itemsText(items)}\n\nTotal: $${totalAmount}${paidByCard ? " (paid by card)" : " (pay on delivery)"}\n\nView it: ${orderUrl}`,
+      text: `Thanks for your order #${orderId}.\n\n${itemsText(items)}\n\nTotal: $${totalAmount}${paymentMethod === "credits" ? " (paid with store credit)" : paidByCard ? " (paid)" : " (pay on delivery)"}\n\nView it: ${orderUrl}`,
     };
   },
 
@@ -108,12 +110,12 @@ export const templates = {
     };
   },
 
-  orderRefunded: ({ orderId, refundAmount, paymentMethod, orderUrl }) => ({
+  orderRefunded: ({ orderId, refundAmount, paymentMethod, refundToCredits, orderUrl }) => ({
     subject: `Refund for order #${orderId}`,
     html: layout(
       `
       <h2>We've refunded $${esc(refundAmount)}</h2>
-      <p>${paymentMethod === "card" ? "The money is on its way back to your card. Banks usually show it within 5-10 business days." : "We'll return the money to you directly."}</p>
+      <p>${refundToCredits ? "It has been added to your store credit, ready to spend right away." : paymentMethod === "card" ? "The money is on its way back to your card. Banks usually show it within 5-10 business days." : "We'll return the money to you directly."}</p>
       <p><a href="${esc(orderUrl)}">View order #${esc(orderId)}</a></p>`,
       "You're receiving this because you placed an order."
     ),

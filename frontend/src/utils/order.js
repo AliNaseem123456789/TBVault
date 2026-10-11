@@ -39,6 +39,12 @@ export const PAYMENT_LABELS = {
   partially_refunded: 'Partly refunded',
   refunded: 'Refunded',
 };
+export const PAYMENT_METHOD_LABELS = { cod: 'Cash on delivery', card: 'Card', credits: 'Store credit' };
+export const paymentMethodLabel = (order) => {
+  const base = PAYMENT_METHOD_LABELS[order.payment_method] ?? order.payment_method;
+  return Number(order.credits_applied) > 0 && order.payment_method !== 'credits' ? `${base} + store credit` : base;
+};
+
 export const paymentLabel = (order) =>
   order.payment_method === 'cod' && order.payment_status === 'unpaid'
     ? 'Pay on delivery'

@@ -2,26 +2,20 @@ import { useEffect, useState } from 'react';
 import Button from '../../components/ui/Button';
 import Icon from '../../components/ui/Icon';
 import { getImageUrl } from '../../utils/product';
-import {
-  getProduct,
-  createProduct,
-  updateProduct,
-  deleteProduct,
-  uploadProductImages,
-  deleteProductImage,
-  setPrimaryImage,
-} from '../../api/admin.api';
 import { errorMessage } from './adminUtils';
+import { useCatalogApi } from './catalogContext';
 import VariantsEditor from './VariantsEditor';
 
-const EMPTY = { name: '', description: '', price: '', stock: '0', category_id: '', is_hidden: false };
+const EMPTY = { name: '', description: '', price: '', stock: '0', category_id: '', brand_id: '', is_hidden: false };
 
 /**
  * Create a product (productId = null) or edit an existing one.
  * Images can only be added once the product exists, so after creating
  * we switch straight into edit mode for the new id.
+ * Works for admins and sellers alike: the API comes from CatalogApiContext.
  */
-const ProductEditor = ({ productId, categories, onSaved, onDeleted, onClose }) => {
+const ProductEditor = ({ productId, categories, brands = [], onSaved, onDeleted, onClose }) => {
+  const { getProduct, createProduct, updateProduct, deleteProduct, uploadProductImages, deleteProductImage, setPrimaryImage } = useCatalogApi();
   const [id, setId] = useState(productId);
   const [form, setForm] = useState(EMPTY);
   const [images, setImages] = useState([]);
@@ -40,6 +34,7 @@ const ProductEditor = ({ productId, categories, onSaved, onDeleted, onClose }) =
       price: String(p.price),
       stock: String(p.stock),
       category_id: String(p.category_id),
+      brand_id: p.brand_id ? String(p.brand_id) : '',
       is_hidden: p.is_hidden,
     });
     setImages(p.images ?? []);
@@ -70,6 +65,7 @@ const ProductEditor = ({ productId, categories, onSaved, onDeleted, onClose }) =
       price: Number(form.price),
       stock: Number(form.stock),
       category_id: Number(form.category_id),
+      brand_id: form.brand_id ? Number(form.brand_id) : null,
       is_hidden: form.is_hidden,
     };
     try {
@@ -165,6 +161,17 @@ const ProductEditor = ({ productId, categories, onSaved, onDeleted, onClose }) =
             {categories.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="p-brand">Brand</label>
+          <select id="p-brand" className="input" value={form.brand_id} onChange={update('brand_id')}>
+            <option value="">No brand</option>
+            {brands.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
               </option>
             ))}
           </select>

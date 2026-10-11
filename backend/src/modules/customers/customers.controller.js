@@ -7,6 +7,7 @@ const parseId = (value) => {
 
 const CUSTOMER_SELECT = {
     id: true, name: true, email: true, role: true, is_verified: true, is_blocked: true, blocked_at: true, created_at: true,
+    credit_balance: true, seller: { select: { id: true, store_name: true, status: true } },
 }
 
 // Spend per customer: non-cancelled orders, minus refunds, card orders only once paid.

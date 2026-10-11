@@ -11,6 +11,7 @@ const ReturnCard = ({ r, onChanged }) => {
   const [note, setNote] = useState(r.admin_note ?? '');
   const [amount, setAmount] = useState(r.suggested_refund);
   const [restock, setRestock] = useState(true);
+  const [destination, setDestination] = useState('original');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
 
@@ -72,11 +73,17 @@ const ReturnCard = ({ r, onChanged }) => {
               className="admin-inline-form"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (window.confirm(`Refund ${formatMoney(amount)} for return #${r.id}?`)) act('refund', () => refundReturn(r.id, Number(amount)));
+                if (window.confirm(`Refund ${formatMoney(amount)} for return #${r.id}${destination === 'credits' ? ' to store credit' : ''}?`)) act('refund', () => refundReturn(r.id, Number(amount), destination));
               }}
             >
               <label htmlFor={`ret-amt-${r.id}`} className="admin-muted">Refund $</label>
               <input id={`ret-amt-${r.id}`} className="input" type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              {r.order.user && (
+                <select className="input" value={destination} onChange={(e) => setDestination(e.target.value)} aria-label="Refund to">
+                  <option value="original">To original payment</option>
+                  <option value="credits">To store credit</option>
+                </select>
+              )}
               <Button type="submit" size="sm" disabled={!!busy}>{busy === 'refund' ? 'Refunding…' : 'Refund'}</Button>
             </form>
           )}

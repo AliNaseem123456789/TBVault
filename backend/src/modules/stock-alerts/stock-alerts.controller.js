@@ -1,4 +1,5 @@
 import prisma from "../../config/db.js"
+import { isPublicProduct } from "../../utils/visibility.js"
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -22,9 +23,9 @@ export const createStockAlert = async (req, res) => {
 
         const product = await prisma.product.findUnique({
             where: { id: productId },
-            select: { is_hidden: true, stock: true, variants: { where: { is_active: true }, select: { id: true, stock: true } } },
+            select: { is_hidden: true, stock: true, seller: { select: { status: true } }, variants: { where: { is_active: true }, select: { id: true, stock: true } } },
         })
-        if (!product || product.is_hidden) return res.status(404).json({ message: "Product not found" })
+        if (!isPublicProduct(product)) return res.status(404).json({ message: "Product not found" })
         const variant = variantId ? product.variants.find((v) => v.id === variantId) : null
         if (variantId && !variant) return res.status(404).json({ message: "That option isn't available" })
         if (!variantId && product.variants.length > 0) return res.status(400).json({ message: "Choose an option first" })

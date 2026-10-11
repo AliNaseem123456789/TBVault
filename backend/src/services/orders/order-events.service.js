@@ -36,6 +36,7 @@ export const publishOrderEmailEvent = async (routingKey, orderId, extra = {}) =>
             shippingTotal: Number(order.shipping_total).toFixed(2),
             taxTotal: Number(order.tax_total).toFixed(2),
             totalAmount: Number(order.total_amount).toFixed(2),
+            creditsApplied: Number(order.credits_applied ?? 0).toFixed(2),
             couponCode: order.coupon_code,
             shippingAddress: order.shipping_address,
             trackingCarrier: order.tracking_carrier,

@@ -88,8 +88,8 @@ export const updateOrderTracking = async (orderId, body) => {
 };
 
 // amount omitted = refund everything not yet refunded
-export const refundOrder = async (orderId, { amount, reason } = {}) => {
-  const response = await api.post(`/admin/orders/${orderId}/refunds`, { amount, reason });
+export const refundOrder = async (orderId, { amount, reason, destination } = {}) => {
+  const response = await api.post(`/admin/orders/${orderId}/refunds`, { amount, reason, destination });
   return response.data;
 };
 
@@ -175,8 +175,8 @@ export const updateReturn = async (returnId, body) => {
   return response.data;
 };
 
-export const refundReturn = async (returnId, amount) => {
-  const response = await api.post(`/admin/returns/${returnId}/refund`, { amount });
+export const refundReturn = async (returnId, amount, destination) => {
+  const response = await api.post(`/admin/returns/${returnId}/refund`, { amount, destination });
   return response.data;
 };
 

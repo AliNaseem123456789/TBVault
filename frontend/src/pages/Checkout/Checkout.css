@@ -123,3 +123,4 @@
 .checkout-coupon__applied span { flex: 1; display: flex; flex-direction: column; }
 .checkout-coupon__applied small { color: var(--color-ink-muted); }
 .checkout-coupon__applied button { background: none; border: none; font: inherit; font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--color-ink); cursor: pointer; }
+.payment-option--credit { margin-bottom: var(--space-3); }

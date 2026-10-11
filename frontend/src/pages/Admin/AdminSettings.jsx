@@ -46,6 +46,7 @@ const AdminSettings = () => {
         tax_rate: Number(settings.tax_rate),
         low_stock_threshold: Number(settings.low_stock_threshold),
         return_window_days: Number(settings.return_window_days),
+        commission_rate: Number(settings.commission_rate),
       });
       setSettings(res.data.settings);
       setState({ saving: false, message: 'Settings saved.', error: '' });
@@ -105,6 +106,10 @@ const AdminSettings = () => {
           <div className="field">
             <label htmlFor="s-returns">Return window (days, 0 = no returns)</label>
             <input id="s-returns" className="input" type="number" min="0" max="365" step="1" value={settings.return_window_days} onChange={set('return_window_days')} />
+          </div>
+          <div className="field">
+            <label htmlFor="s-commission">Marketplace commission (%)</label>
+            <input id="s-commission" className="input" type="number" min="0" max="90" step="0.01" value={settings.commission_rate} onChange={set('commission_rate')} />
           </div>
           <div className="field">
             <label htmlFor="s-low">Low-stock alert at</label>

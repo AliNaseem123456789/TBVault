@@ -159,3 +159,8 @@
 .return-form__qty { width: 72px; padding: var(--space-1) var(--space-2); }
 .return-form__actions { display: flex; gap: var(--space-3); }
 .return-form textarea { resize: vertical; font-family: inherit; }
+
+/* One line per seller when an order ships in several parcels. */
+.order-detail__shipments { list-style: none; margin: var(--space-4) 0 0; padding: var(--space-4) 0 0; border-top: 1px solid var(--color-border); display: flex; flex-direction: column; gap: var(--space-2); }
+.order-detail__shipments li { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; font-size: var(--text-sm); }
+.order-detail__shipments li > span:first-child { display: inline-flex; align-items: center; gap: var(--space-2); font-weight: var(--weight-semibold); }

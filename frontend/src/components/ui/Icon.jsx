@@ -26,6 +26,9 @@ const paths = {
   return: 'M9 14L4 9l5-5 M4 9h10a6 6 0 010 12h-3',
   bell: 'M6 16V11a6 6 0 0112 0v5l1.5 2h-15L6 16z M10 20a2 2 0 004 0',
   download: 'M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5 M5 19h14',
+  store: 'M4 9l1.5-5h13L20 9 M4 9v11h16V9 M4 9a2.7 2.7 0 005.3 0 2.7 2.7 0 005.4 0 2.7 2.7 0 005.3 0 M10 20v-5h4v5',
+  wallet: 'M4 7h15a1 1 0 011 1v11H4a1 1 0 01-1-1V6a2 2 0 012-2h11v3 M16 13.5h.01',
+  gift: 'M4 11h16v9H4z M3 7h18v4H3z M12 7v13 M12 7c-1.5-3-5-3-5-1s3 1 5 1z M12 7c1.5-3 5-3 5-1s-3 1-5 1z',
 };
 
 const Icon = ({ name, size = 20, strokeWidth = 1.8, className = '' }) => {

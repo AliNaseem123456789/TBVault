@@ -1,6 +1,7 @@
 import prisma from "../../config/db.js"
 import { withSalePricing } from "../../services/pricing/pricing.service.js"
 import { parseLineInput } from "../../services/checkout/checkout.service.js"
+import { isPublicProduct } from "../../utils/visibility.js"
 
 const MAX_QUANTITY = 99
 
@@ -19,9 +20,9 @@ const parseVariantId = (value) => {
 const checkPurchasable = async (productId, variantId, db = prisma) => {
     const product = await db.product.findUnique({
         where: { id: productId },
-        select: { is_hidden: true, name: true, variants: { where: { is_active: true }, select: { id: true } } },
+        select: { is_hidden: true, name: true, seller: { select: { status: true } }, variants: { where: { is_active: true }, select: { id: true } } },
     })
-    if (!product || product.is_hidden) return { status: 404, message: "Product not found" }
+    if (!isPublicProduct(product)) return { status: 404, message: "Product not found" }
     if (product.variants.length > 0) {
         if (!variantId) return { status: 400, message: `Choose an option for ${product.name}` }
         if (!product.variants.some((v) => v.id === variantId)) return { status: 404, message: "That option isn't available" }

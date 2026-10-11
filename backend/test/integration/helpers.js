@@ -119,11 +119,27 @@ export const createUser = async ({ role = "CUSTOMER", email } = {}) => {
     return { user, token: jwtHelpers.generateAccessToken(user.id, user.role) }
 }
 
-export const createProduct = async ({ name = "Lamp", price = 10, stock = 10, categoryName = "Home", variants } = {}) => {
+export const platformSeller = async () => {
+    const { ensurePlatformSeller } = await import("../../src/services/marketplace/platform-seller.service.js")
+    return ensurePlatformSeller(prisma)
+}
+
+// A user with an approved seller account (and the SELLER role).
+export const createSeller = async ({ storeName, commissionRate = null } = {}) => {
+    const { user, token } = await createUser({ role: "SELLER" })
+    const name = storeName ?? `Store ${user.id}`
+    const seller = await prisma.seller.create({
+        data: { user_id: user.id, store_name: name, slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"), status: "APPROVED", approved_at: new Date(), commission_rate: commissionRate },
+    })
+    return { user, token, seller }
+}
+
+export const createProduct = async ({ name = "Lamp", price = 10, stock = 10, categoryName = "Home", variants, sellerId } = {}) => {
     const category = await prisma.category.upsert({ where: { name: categoryName }, update: {}, create: { name: categoryName } })
     return prisma.product.create({
         data: {
             name, price, stock, category_id: category.id,
+            seller_id: sellerId ?? (await platformSeller()).id,
             ...(variants ? { variants: { create: variants } } : {}),
         },
         include: { variants: true },

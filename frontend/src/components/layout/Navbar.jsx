@@ -24,7 +24,7 @@ const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const { count: cartCount, openCart } = useCart();
-  const { isAuthenticated, isAdmin } = useAuth();
+  const { isAuthenticated, isAdmin, isSeller } = useAuth();
   const { count: wishlistCount } = useWishlist();
 
   useEffect(() => {
@@ -47,6 +47,9 @@ const Navbar = () => {
               {link.label}
             </NavLink>
           ))}
+          <NavLink to={isSeller ? '/seller' : '/sell'} className="navbar__link">
+            {isSeller ? 'My store' : 'Sell'}
+          </NavLink>
           {isAdmin && (
             <NavLink to="/admin" className="navbar__link">
               Admin
@@ -103,6 +106,14 @@ const Navbar = () => {
           <Link to="/wishlist" className="navbar__mobile-link" onClick={() => setMenuOpen(false)}>
             Wishlist{wishlistCount > 0 ? ` (${wishlistCount})` : ''}
           </Link>
+          {isAuthenticated && (
+            <Link to="/wallet" className="navbar__mobile-link" onClick={() => setMenuOpen(false)}>
+              Store credit
+            </Link>
+          )}
+          <NavLink to={isSeller ? '/seller' : '/sell'} className="navbar__mobile-link" onClick={() => setMenuOpen(false)}>
+            {isSeller ? 'My store' : 'Sell on TBVault'}
+          </NavLink>
           {isAdmin && (
             <NavLink to="/admin" className="navbar__mobile-link" onClick={() => setMenuOpen(false)}>
               Admin

@@ -5,6 +5,8 @@ import bcrypt from "bcrypt";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import prisma from "../src/config/db.js";
 import storage, { BUCKET } from "../src/config/storage.js";
+import { ensurePlatformSeller } from "../src/services/marketplace/platform-seller.service.js";
+import { pickBrand, brandId } from "./brand-catalog.js";
 
 /**
  * Fills the store with demo products from https://dummyjson.com.
@@ -16,7 +18,7 @@ import storage, { BUCKET } from "../src/config/storage.js";
  *
  * For each product it:
  *   - creates the category if needed ("mens-shirts" -> "Mens Shirts")
- *   - creates the product (name, description, price, stock)
+ *   - creates the product (name, description, price, stock, brand) in the store's own catalogue
  *   - downloads its photos and uploads them to the S3 bucket at products/<id>/<uuid>.webp,
  *     the same layout as admin uploads; the first photo is the primary one
  *   - turns discountPercentage >= --sale-min (default 10) into a 30-day product sale
@@ -105,6 +107,7 @@ const getReviewerId = async (review) => {
     return reviewerIds.get(email);
 };
 
+let platformId;
 const importProduct = async (item) => {
     const name = item.title.slice(0, 100);
     const categoryId = await getCategoryId(item.category);
@@ -112,6 +115,7 @@ const importProduct = async (item) => {
     const existing = await prisma.product.findFirst({ where: { name, category_id: categoryId }, select: { id: true } });
     if (existing) return { skipped: true };
 
+    platformId ??= (await ensurePlatformSeller(prisma)).id;
     const product = await prisma.product.create({
         data: {
             name,
@@ -119,6 +123,9 @@ const importProduct = async (item) => {
             price: item.price.toFixed(2),
             stock: item.stock ?? 0,
             category_id: categoryId,
+            seller_id: platformId,
+            // DummyJSON's own brand when it has one, otherwise a plausible one for the category.
+            brand_id: await brandId(prisma, item.brand || pickBrand(item.category, item.id)),
         },
     });
 

@@ -1,5 +1,6 @@
 import prisma from "../../config/db.js"
 import { withSalePricing } from "../../services/pricing/pricing.service.js"
+import { PUBLIC_PRODUCT_WHERE } from "../../utils/visibility.js"
 
 const parseId = (value) => {
     const id = Number(value)
@@ -41,7 +42,7 @@ export const getCategories = async (req, res) => {
     try {
         const categories = await prisma.category.findMany({
             orderBy: { name: "asc" },
-            include: { _count: { select: { products: { where: { is_hidden: false } } } } },
+            include: { _count: { select: { products: { where: PUBLIC_PRODUCT_WHERE } } } },
         })
         return res.status(200).json({ message: "Category fetched", data: categories })
     } catch (err) {
@@ -89,7 +90,7 @@ export const getProductsByCategory = async (req, res) => {
             where: { id },
             include: {
                 products: {
-                    where: { is_hidden: false },
+                    where: PUBLIC_PRODUCT_WHERE,
                     orderBy: { created_at: "desc" },
                     include: { images: { orderBy: [{ is_primary: "desc" }, { created_at: "asc" }], take: 2 } },
                 },
