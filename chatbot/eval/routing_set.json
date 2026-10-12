@@ -1,0 +1,50 @@
+{
+  "_about": "Labelled messages for `python -m app.cli eval-routing`. intents = expected task intents (several = multiple_intents). expect = fields to check on the first task (filters or query/order_id/products); strings match if contained, case-insensitive. previous/history = conversation context for follow-ups.",
+  "cases": [
+    {"message": "hi", "intents": ["greeting"]},
+    {"message": "Hello there!", "intents": ["greeting"]},
+    {"message": "thanks a lot", "intents": ["greeting"]},
+    {"message": "how are you doing today?", "intents": ["general_conversation"]},
+
+    {"message": "show me wireless headphones", "intents": ["product_search"], "expect": {"query": "headphones"}},
+    {"message": "samsung phones under $300 in stock", "intents": ["product_search"],
+     "expect": {"brand": "samsung", "max_price": 300, "in_stock": true}},
+    {"message": "something to keep my coffee hot", "intents": ["product_search"]},
+    {"message": "only Sony under 200",
+     "history": [{"role": "user", "content": "show me wireless headphones"}, {"role": "assistant", "content": "Here are some wireless headphones."}],
+     "previous": {"query": "wireless headphones", "filters": {}},
+     "intents": ["product_search"], "expect": {"query": "headphones", "brand": "sony", "max_price": 200}},
+    {"message": "cheaper ones?",
+     "history": [{"role": "user", "content": "laptops under $1500"}, {"role": "assistant", "content": "Here are laptops under $1500."}],
+     "previous": {"query": "laptops", "filters": {"max_price": 1500}},
+     "intents": ["product_search"], "expect": {"query": "laptop"}},
+    {"message": "actually show me tablets instead",
+     "history": [{"role": "user", "content": "apple laptops"}, {"role": "assistant", "content": "Here are Apple laptops."}],
+     "previous": {"query": "apple laptops", "filters": {"brand": "Apple"}},
+     "intents": ["product_search"], "expect": {"query": "tablet"}},
+
+    {"message": "compare iPhone 13 Pro and Samsung Galaxy S10", "intents": ["product_comparison"]},
+    {"message": "which is better for gaming, the Asus Zenbook or the Dell XPS 13?", "intents": ["product_comparison"]},
+    {"message": "find phones under $500, compare their cameras with the iPhone 13 Pro and recommend one for photography",
+     "intents": ["product_comparison"], "expect": {"search": "phone"}},
+
+    {"message": "how long do refunds take?", "intents": ["policy_question"]},
+    {"message": "do you offer cash on delivery?", "intents": ["policy_question"]},
+    {"message": "can I return something after 2 weeks?", "intents": ["policy_question"]},
+    {"message": "how do I become a seller here?", "intents": ["policy_question"]},
+    {"message": "do gift cards expire?", "intents": ["policy_question"]},
+
+    {"message": "where is my order 52?", "intents": ["order_tracking"], "expect": {"order_id": 52}},
+    {"message": "show my orders", "intents": ["order_tracking"]},
+    {"message": "has my last order shipped yet?", "intents": ["order_tracking"]},
+    {"message": "cancel order #77", "intents": ["order_cancellation"], "expect": {"order_id": 77}},
+    {"message": "I want to cancel my order", "intents": ["order_cancellation"]},
+
+    {"message": "track order 12 and also what's your return policy?", "intents": ["order_tracking", "policy_question"]},
+    {"message": "do you sell yoga mats? and how much is shipping?", "intents": ["product_search", "policy_question"]},
+
+    {"message": "what's the weather in Karachi?", "intents": ["out_of_scope"]},
+    {"message": "write me a poem about cats", "intents": ["out_of_scope"]},
+    {"message": "I want the blue one", "intents": ["clarification_needed"]}
+  ]
+}

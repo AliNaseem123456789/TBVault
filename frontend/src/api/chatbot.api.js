@@ -3,8 +3,10 @@ import api from "./apiClient";
 /** The AI shopping assistant (backend /api/chat, which forwards to the Python chatbot service). */
 
 // history: earlier turns [{ role: "user" | "assistant", content }]
-export const sendChat = async (message, history = []) =>
-  (await api.post("/chat", { message, history }, { timeout: 60000 })).data;
+// state: the `state` returned with the previous reply (what it searched for), so follow-ups
+//        like "only Sony under $200" refine that search.
+export const sendChat = async (message, history = [], state = null) =>
+  (await api.post("/chat", { message, history, ...(state ? { state } : {}) }, { timeout: 60000 })).data;
 
 export const sendChatImage = async (file, message = "") => {
   const form = new FormData();

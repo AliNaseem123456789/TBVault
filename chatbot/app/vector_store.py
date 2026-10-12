@@ -8,6 +8,7 @@ Two indexes:
 
 Vector ids are stable, so indexing the same thing twice overwrites instead of duplicating:
   product:{product_id}
+  policy:{file}#{section}:{n}       (Phase 2, in the "policies" namespace of the products index)
   image:{product_id}:{image_id}     (the product id in the middle lets us list/delete
                                      all photos of one product by prefix)
 """
@@ -73,22 +74,27 @@ def product_id_from(vector_id):
 # ----------------------------------------------------------------------------
 # writing
 # ----------------------------------------------------------------------------
-def upsert(index, vectors, batch_size=100):
+def _ns(namespace):
+    # The default namespace is left out of the call entirely (works with every SDK version).
+    return {"namespace": namespace} if namespace else {}
+
+
+def upsert(index, vectors, batch_size=100, namespace=""):
     """vectors: dicts with id, values, optional sparse_values, metadata."""
     for start in range(0, len(vectors), batch_size):
-        index.upsert(vectors=vectors[start:start + batch_size], show_progress=False)
+        index.upsert(vectors=vectors[start:start + batch_size], show_progress=False, **_ns(namespace))
 
 
-def delete(index, ids):
+def delete(index, ids, namespace=""):
     ids = list(ids)
     for start in range(0, len(ids), 1000):
-        index.delete(ids=ids[start:start + 1000])
+        index.delete(ids=ids[start:start + 1000], **_ns(namespace))
 
 
-def list_ids(index, prefix):
+def list_ids(index, prefix, namespace=""):
     """All vector ids starting with prefix."""
     ids = []
-    for page in index.list(prefix=prefix):
+    for page in index.list(prefix=prefix, **_ns(namespace)):
         for item in page:
             ids.append(item if isinstance(item, str) else item.id)
     return ids
@@ -97,7 +103,7 @@ def list_ids(index, prefix):
 # ----------------------------------------------------------------------------
 # searching
 # ----------------------------------------------------------------------------
-def hybrid_query(dense, sparse, alpha, top_k, metadata_filter=None):
+def hybrid_query(dense, sparse, alpha, top_k, metadata_filter=None, namespace=""):
     """
     Pinecone adds the dense dot product and the sparse dot product together.
     To control the mix we scale both sides first (the "convex combination"):
@@ -114,7 +120,7 @@ def hybrid_query(dense, sparse, alpha, top_k, metadata_filter=None):
                                    "values": [v * (1 - alpha) for v in sparse["values"]]}
     if metadata_filter:
         kwargs["filter"] = metadata_filter
-    return text_index().query(**kwargs).matches
+    return text_index().query(**kwargs, **_ns(namespace)).matches
 
 
 def image_query(vector, top_k, metadata_filter=None):

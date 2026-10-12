@@ -11,7 +11,8 @@ const money = (value) => {
     return Number.isFinite(n) && n >= 0 ? n : null
 }
 
-/** POST /chat body: { message, history?: [{ role: "user"|"assistant", content }] } */
+/** POST /chat body: { message, history?: [{ role: "user"|"assistant", content }], state? }
+ *  state = what the previous answer searched for ({ query, filters }); the chatbot validates it in detail. */
 export const parseChatInput = (body = {}) => {
     const message = typeof body.message === "string" ? body.message.trim() : ""
     if (!message) return { error: "message is required" }
@@ -26,7 +27,13 @@ export const parseChatInput = (body = {}) => {
             history.push({ role: turn.role, content: turn.content.slice(0, 2000) })
         }
     }
-    return { data: { message, history } }
+    let state
+    if (body.state !== undefined && body.state !== null) {
+        if (typeof body.state !== "object" || Array.isArray(body.state)) return { error: "state must be an object" }
+        if (JSON.stringify(body.state).length > 2000) return { error: "state is too large" }
+        state = body.state
+    }
+    return { data: { message, history, ...(state ? { state } : {}) } }
 }
 
 /** Optional text sent along with an image. */

@@ -10,6 +10,7 @@ search_products(query, filters)   hybrid text search
     4. take the product ids, load them from Postgres (only public products come back)
     5. enforce hard rules on the REAL data: price range, in stock, on sale
     6. if guessed filters left nothing after the Postgres checks, retry without them
+    7. (Phase 2) rerank the top RERANK_CANDIDATES with a cross-encoder (see reranker.py)
 
 search_by_image(image_bytes)      photo -> CLIP image vector -> images index
 search_images_by_text(query)      text  -> CLIP text vector  -> images index
@@ -22,8 +23,9 @@ Every function returns {"products": [...], "applied": {...}, "debug": [...]}.
 import logging
 import re
 
-from app import bm25, catalog, config, embeddings, vector_store
+from app import bm25, catalog, config, embeddings, reranker, vector_store
 from app.query_parser import Filters
+from app.text_builder import product_document
 
 log = logging.getLogger("retrieval")
 
@@ -72,11 +74,27 @@ def _drop_weak(matches, ratio=None):
     return [m for m in matches if m.score >= cutoff and m.score > 0]
 
 
-def _resolve(ranked_ids, filters, limit):
-    """Ids in rank order -> public products from Postgres that pass the filters."""
+def _resolve_rows(ranked_ids, filters):
+    """Ids in rank order -> Postgres rows of public products that pass the filters."""
     rows = catalog.get_products(ranked_ids)          # hidden / deleted / unapproved drop out here
-    rows = [row for row in rows if _passes(row, filters)]
-    return [catalog.to_public(row) for row in rows[:limit]]
+    return [row for row in rows if _passes(row, filters)]
+
+
+def _resolve(ranked_ids, filters, limit):
+    return [catalog.to_public(row) for row in _resolve_rows(ranked_ids, filters)[:limit]]
+
+
+def _rerank_rows(query, rows, exact_match):
+    """Phase 2: cross-encoder re-ordering of the top candidates. Returns (rows, scores or None)."""
+    candidates = rows[:config.RERANK_CANDIDATES]
+    if not reranker.should_rerank(candidates, exact_match):
+        return rows, None
+    try:
+        ordered, scores = reranker.rerank(query, candidates, product_document)
+    except Exception as err:   # model missing/broken: keep the hybrid order rather than fail the search
+        log.warning("reranking skipped: %s", err)
+        return rows, None
+    return ordered, scores
 
 
 def _without_guesses(filters):
@@ -109,7 +127,7 @@ def _search_with_guesses(run, filters, ratio=None):
     return loose_matches, loose
 
 
-def search_products(query, filters=None, limit=None, alpha=None):
+def search_products(query, filters=None, limit=None, alpha=None, rerank=True):
     filters = filters or Filters()
     limit = min(limit or config.DEFAULT_LIMIT, config.MAX_LIMIT)
     alpha = config.HYBRID_ALPHA if alpha is None else alpha
@@ -126,13 +144,21 @@ def search_products(query, filters=None, limit=None, alpha=None):
 
     # 4-5. authoritative data + hard rules
     ranked = exact_ids + [d["product_id"] for d in debug]
-    products = _resolve(ranked, filters, limit)
+    rows = _resolve_rows(ranked, filters)
 
     # 6. guessed filters left nothing after the Postgres checks -> try again without them
-    if not products and filters.guessed:
-        return search_products(query, _without_guesses(filters), limit, alpha)
+    if not rows and filters.guessed:
+        return search_products(query, _without_guesses(filters), limit, alpha, rerank)
 
-    return {"products": products, "applied": filters.describe(), "debug": debug}
+    # 7. (Phase 2) rerank the top candidates with the cross-encoder
+    scores = None
+    if rerank:
+        rows, scores = _rerank_rows(query, rows, exact_match=bool(exact_ids))
+    products = [catalog.to_public(row) for row in rows[:limit]]
+    result = {"products": products, "applied": filters.describe(), "debug": debug, "reranked": scores is not None}
+    if scores is not None:
+        result["rerank"] = [{"product_id": row["id"], "score": s} for row, s in zip(rows, scores)]
+    return result
 
 
 def _group_by_product(matches):

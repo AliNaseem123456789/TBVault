@@ -69,9 +69,26 @@ MAX_LIMIT = 20
 IMAGES_PER_PRODUCT = _int("IMAGES_PER_PRODUCT", "3")
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
+# --- Reranking (Phase 2) ---------------------------------------------------------
+RERANK = _str("RERANK", "true").lower() in ("1", "true", "yes")
+RERANK_MODEL = _str("RERANK_MODEL", "Xenova/ms-marco-MiniLM-L-6-v2")
+RERANK_CANDIDATES = _int("RERANK_CANDIDATES", "20")   # how many hybrid results the cross-encoder re-reads
+# Optional: drop products whose rerank score is below this (raw logit, e.g. -5). Empty = keep all.
+RERANK_MIN_SCORE = float(os.getenv("RERANK_MIN_SCORE")) if os.getenv("RERANK_MIN_SCORE", "").strip() else None
+
+# --- Policies (Phase 2): markdown files -> parent sections + child chunks ---------
+KNOWLEDGE_DIR = CHATBOT_DIR / "knowledge"
+POLICY_NAMESPACE = "policies"          # lives in the products index, in its own namespace
+POLICY_BM25_FILE = CHATBOT_DIR / "data" / "bm25_policies.json"
+POLICY_CHUNK_CHARS = _int("POLICY_CHUNK_CHARS", "450")
+
+# --- Orders (Phase 2): the chatbot reads orders through the Node API, as the customer ---
+NODE_API_URL = _str("NODE_API_URL", "http://localhost:3000/api")
+
 # --- LLM (optional: search works without it) ---------------------------------
 GROQ_API_KEY = _str("GROQ_API_KEY")
-LLM_MODEL = _str("LLM_MODEL", "openai/gpt-oss-120b")
+LLM_MODEL = _str("LLM_MODEL", "openai/gpt-oss-120b")             # writes the replies, picks order tools
+FAST_LLM_MODEL = _str("FAST_LLM_MODEL", "openai/gpt-oss-20b")    # routing, rewriting, planning (JSON)
 LLM_TIMEOUT_SECONDS = _int("LLM_TIMEOUT_SECONDS", "30")
 CHAT_PRODUCTS_IN_PROMPT = 6   # how many products the LLM sees
 CHAT_HISTORY_TURNS = 6        # how many earlier messages the LLM sees

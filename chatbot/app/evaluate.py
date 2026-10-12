@@ -11,11 +11,14 @@ Metrics (higher is better, 1.0 is perfect):
           (0 if not in the top 10)
   rules   for price/stock cases: share of returned products that really obey the rule
 
-Text cases run three ways so you can SEE what hybrid search buys you:
-  dense   (alpha=1)  meaning only — good at paraphrases
-  sparse  (alpha=0)  keywords only — good at model numbers
-  hybrid  (alpha=HYBRID_ALPHA)
-Try different HYBRID_ALPHA values in .env and compare.
+Text cases run four ways so you can SEE what each stage buys you:
+  dense    (alpha=1)  meaning only — good at paraphrases
+  sparse   (alpha=0)  keywords only — good at model numbers
+  hybrid   (alpha=HYBRID_ALPHA)
+  +rerank  hybrid, then the cross-encoder re-orders the top candidates (Phase 2)
+Try different HYBRID_ALPHA / RERANK_CANDIDATES values in .env and compare.
+
+run_routing() checks intent classification and query rewriting (eval/routing_set.json).
 
 Photo search is tested by "self-retrieval": each product's own main photo is used as
 the query and should find that product first.
@@ -72,7 +75,9 @@ def _summary(label, ranks, rules=None):
 
 def run(image_samples=25):
     cases = json.loads(EVAL_FILE.read_text())
-    modes = {"dense": 1.0, "sparse": 0.0, "hybrid": config.HYBRID_ALPHA}
+    # (alpha, rerank): the last mode shows what the cross-encoder adds on top of hybrid
+    modes = {"dense": (1.0, False), "sparse": (0.0, False), "hybrid": (config.HYBRID_ALPHA, False),
+             "+rerank": (config.HYBRID_ALPHA, True)}
 
     print("\n=== Text search ===")
     by_type = {}
@@ -83,8 +88,8 @@ def run(image_samples=25):
             continue
         text, filters = query_parser.parse(case["query"])
         line = f"  [{case['type']:<10}] {case['query'][:45]:<45}"
-        for mode, alpha in modes.items():
-            result = retrieval.search_products(text, filters, limit=10, alpha=alpha)
+        for mode, (alpha, rerank) in modes.items():
+            result = retrieval.search_products(text, filters, limit=10, alpha=alpha, rerank=rerank)
             rank = _rank(result["products"], expected)
             stats = by_type.setdefault(case["type"], {}).setdefault(mode, {"ranks": [], "rules": []})
             stats["ranks"].append(rank)
@@ -130,3 +135,43 @@ def run(image_samples=25):
         rank = _rank(retrieval.search_by_image(data, limit=10)["products"], {row["id"]})
         ranks.append(rank)
     print("  " + _summary("clip", ranks))
+
+
+ROUTING_FILE = config.CHATBOT_DIR / "eval" / "routing_set.json"
+
+
+def run_routing():
+    """Intent accuracy + rewriting checks. Uses the real router (LLM if GROQ_API_KEY is set)."""
+    from app import router
+    cases = json.loads(ROUTING_FILE.read_text())["cases"]
+    correct, wrong, by_intent = 0, [], {}
+    for case in cases:
+        route, how = router.route(case["message"], case.get("history"), case.get("previous"))
+        got = sorted(t.intent for t in route.tasks)
+        want = sorted(case["intents"])
+        ok = got == want
+        checks = []
+        task = route.tasks[0]
+        for key, value in (case.get("expect") or {}).items():
+            actual = getattr(task.filters, key, None) if key in router.SearchFilters.model_fields else getattr(task, key, None)
+            if isinstance(value, str) and isinstance(actual, str):
+                good = value.lower() in actual.lower()
+            else:
+                good = actual == value
+            checks.append(good)
+            if not good:
+                wrong.append(f"  {case['message']!r}: {key} = {actual!r}, expected {value!r}")
+        ok = ok and all(checks)
+        correct += ok
+        stats = by_intent.setdefault("+".join(want), [0, 0])
+        stats[0] += ok
+        stats[1] += 1
+        mark = "ok " if ok else "BAD"
+        print(f"  {mark} [{how:<5}] {case['message'][:55]:<55} -> {'+'.join(got)}")
+        if got != want:
+            wrong.append(f"  {case['message']!r}: got {got}, expected {want}")
+    print(f"\nRouting accuracy: {correct}/{len(cases)} = {correct / max(1, len(cases)):.2f}")
+    for intent, (good, total) in sorted(by_intent.items()):
+        print(f"  {intent:<40} {good}/{total}")
+    if wrong:
+        print("\nMistakes:\n" + "\n".join(wrong))

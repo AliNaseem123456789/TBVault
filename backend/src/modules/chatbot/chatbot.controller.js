@@ -22,12 +22,15 @@ const offline = (res, fn, err) => {
     return res.status(503).json({ message: "The assistant is unavailable right now. Please try again in a moment." })
 }
 
-// POST /chat   body: { message, history? }
+// The verified access token of a signed-in customer (optionalAuthenticate already checked it).
+const userTokenOf = (req) => (req.user ? req.headers.authorization.split(" ")[1] : undefined)
+
+// POST /chat   body: { message, history?, state? }
 export const sendChatMessage = async (req, res) => {
     const { data, error } = parseChatInput(req.body)
     if (error) return res.status(400).json({ message: error })
     try {
-        return relay(res, await callChatbot("/chat", { method: "POST", json: data }), "Chat reply")
+        return relay(res, await callChatbot("/chat", { method: "POST", json: data, userToken: userTokenOf(req) }), "Chat reply")
     } catch (err) {
         return offline(res, "sendChatMessage", err)
     }

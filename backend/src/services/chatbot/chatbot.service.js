@@ -9,17 +9,20 @@ const TIMEOUT_MS = Number(process.env.CHATBOT_TIMEOUT_MS || 45000)
 
 /**
  * callChatbot("/search", { query: { query: "lamp" } })
- * callChatbot("/chat", { method: "POST", json: { message, history } })
+ * callChatbot("/chat", { method: "POST", json: { message, history, state }, userToken })
  * callChatbot("/chat/image", { method: "POST", form: buildForm(file, { message }) })
  * Resolves to { status, body }. Throws when the service can't be reached or times out.
  */
-export const callChatbot = async (path, { method = "GET", query, json, form } = {}) => {
+export const callChatbot = async (path, { method = "GET", query, json, form, userToken } = {}) => {
     const url = new URL(path, CHATBOT_URL)
     for (const [key, value] of Object.entries(query ?? {})) {
         if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value))
     }
     const headers = {}
     if (process.env.CHATBOT_INTERNAL_KEY) headers["X-Internal-Key"] = process.env.CHATBOT_INTERNAL_KEY
+    // The signed-in customer's own access token: the chatbot uses it to call this API *as them*
+    // (order tools), so the usual ownership checks apply. Only sent for verified tokens.
+    if (userToken) headers["X-User-Token"] = userToken
     let body
     if (json) {
         headers["Content-Type"] = "application/json"

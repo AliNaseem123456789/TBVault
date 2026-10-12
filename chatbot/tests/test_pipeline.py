@@ -141,34 +141,44 @@ def test_no_results(fake_world, shop):
 def test_chat_without_llm_still_answers(fake_world, shop):
     indexer.rebuild(progress=lambda *_: None)
     result = chat.answer("zqsony WH-CH720N under $150")
-    assert result["llm"] is False
+    assert result["llm"] is False and result["intent"] == "product_search"
     assert result["products"][0]["id"] == shop["headphones"]
     assert "Zqsony WH-CH720N Headphones" in result["answer"]
     assert result["applied"]["max_price"] == 150
 
 
 def test_chat_with_llm_gets_only_retrieved_facts(fake_world, shop, monkeypatch):
+    from app import llm, router
     indexer.rebuild(progress=lambda *_: None)
     seen = {}
 
-    def fake_llm(question, history, context):
-        seen["context"], seen["history"] = context, history
-        return "The Zqacme Steel Kettle is $50.00 on sale."
+    def fake_chat(messages, **kwargs):
+        seen["messages"] = messages
+        return SimpleNamespace(content="The Zqacme Steel Kettle is $50.00 on sale.", tool_calls=None)
 
     monkeypatch.setattr(config, "GROQ_API_KEY", "x")
-    monkeypatch.setattr(chat, "_ask_llm", fake_llm)
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    monkeypatch.setattr(router, "_llm_route", lambda *a: router.rule_route("kettle on sale"))
     result = chat.answer("kettle on sale", history=[{"role": "user", "content": "hi"}])
-    assert result["llm"] is True and result["answer"].startswith("The Zqacme")
-    assert "PRODUCTS:" in seen["context"] and "$50.00 (on sale, 50% off; was $100.00)" in seen["context"]
-    assert "Zqsony Secret Speaker" not in seen["context"]
+    assert result["intent"] == "product_search" and result["answer"].startswith("The Zqacme")
+    context = seen["messages"][-1]["content"]
+    assert "PRODUCTS:" in context and "$50.00 (on sale, 50% off; was $100.00)" in context
+    assert "Zqsony Secret Speaker" not in context
+    assert seen["messages"][1] == {"role": "user", "content": "hi"}     # history is passed on
 
 
 def test_chat_falls_back_when_llm_fails(fake_world, shop, monkeypatch):
+    from app import llm
     indexer.rebuild(progress=lambda *_: None)
     monkeypatch.setattr(config, "GROQ_API_KEY", "x")
-    monkeypatch.setattr(chat, "_ask_llm", lambda *a: (_ for _ in ()).throw(TimeoutError("slow")))
+
+    def broken(*a, **k):
+        raise llm.LLMError("timeout")
+    monkeypatch.setattr(llm, "chat", broken)
+    monkeypatch.setattr(llm, "ask_json", broken)
     result = chat.answer("kettle")
-    assert result["llm"] is False and result["products"]
+    assert result["intent"] == "product_search" and result["products"]
+    assert "Zqacme Steel Kettle" in result["answer"]
 
 
 def test_build_context_is_bounded():

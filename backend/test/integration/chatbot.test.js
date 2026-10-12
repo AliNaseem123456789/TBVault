@@ -63,10 +63,24 @@ t("chat messages are validated and passed to the chatbot service with the shared
     const sent = received.at(-1)
     assert.equal(sent.path, "/chat")
     assert.equal(sent.headers["x-internal-key"], "shared-secret")
+    assert.equal(sent.headers["x-user-token"], token)       // signed in: the chatbot may look up *their* orders
     assert.deepEqual(JSON.parse(sent.body), {
         message: "a lamp for my desk",
         history: [{ role: "user", content: "hello" }, { role: "assistant", content: "hi!" }],
     })
+})
+
+t("guests send no user token; the search state is passed along and checked", async () => {
+    const state = { query: "desk lamps", filters: { max_price: 50 } }
+    assert.equal((await api("POST", "/chat", { body: { message: "only brass ones", state } })).status, 200)
+    const sent = received.at(-1)
+    assert.equal(sent.headers["x-user-token"], undefined)
+    assert.deepEqual(JSON.parse(sent.body).state, state)
+
+    assert.equal((await api("POST", "/chat", { body: { message: "x", state: "nope" } })).status, 400)
+    assert.equal((await api("POST", "/chat", { body: { message: "x", state: { q: "y".repeat(3000) } } })).status, 400)
+    // a forged/expired token is rejected, not silently forwarded
+    assert.equal((await api("POST", "/chat", { token: "forged.token.here", body: { message: "my orders" } })).status, 401)
 })
 
 t("chatbot errors become clear 400 / 503 answers", async () => {

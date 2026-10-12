@@ -1,12 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { sendChat, sendChatImage } from '../../api/chatbot.api';
+import { cancelOrder } from '../../api/orders.api';
 
 /**
  * One conversation shared by the floating widget and the full /chat page,
  * so opening the page keeps what you were talking about.
  *
  * A message looks like:
- *   { id, role: 'user' | 'assistant', content, imageUrl?, products?, error? }
+ *   { id, role: 'user' | 'assistant', content, imageUrl?, error?,
+ *     products?, orders?, sources?, action?, state? }      (assistant extras)
+ * `state` (what that reply searched for) is sent back with the next message so
+ * follow-ups like "only Sony under $200" refine the previous search.
  * Text messages survive a page reload (sessionStorage); attached photos don't.
  */
 const ChatContext = createContext(null);
@@ -48,8 +52,8 @@ export const ChatProvider = ({ children }) => {
     setSending(true);
     try {
       const res = await request();
-      const { answer, products = [] } = res.data;
-      setMessages((list) => [...list, { id: newId(), role: 'assistant', content: answer, products }]);
+      const { answer, products = [], orders = [], sources = [], action = null, state = null } = res.data;
+      setMessages((list) => [...list, { id: newId(), role: 'assistant', content: answer, products, orders, sources, action, state }]);
     } catch (err) {
       setMessages((list) => [...list, { id: newId(), role: 'assistant', content: errorText(err), error: true }]);
     } finally {
@@ -65,10 +69,38 @@ export const ChatProvider = ({ children }) => {
         .filter((m) => !m.error && m.content)
         .slice(-HISTORY_SENT)
         .map(({ role, content }) => ({ role, content }));
-      return ask({ id: newId(), role: 'user', content: message }, () => sendChat(message, history));
+      const lastState = [...messages].reverse().find((m) => m.role === 'assistant' && m.state)?.state ?? null;
+      return ask({ id: newId(), role: 'user', content: message }, () => sendChat(message, history, lastState));
     },
     [ask, messages]
   );
+
+  /**
+   * The cancel button under a reply. Only this click cancels: it calls the normal
+   * POST /orders/:id/cancel (the backend checks ownership and status again).
+   * choice: 'confirm' | 'dismiss'
+   */
+  const resolveAction = useCallback(async (messageId, choice) => {
+    const target = messages.find((m) => m.id === messageId);
+    if (!target?.action || target.action.status) return;
+    const setStatus = (status) =>
+      setMessages((list) => list.map((m) => (m.id === messageId ? { ...m, action: { ...m.action, status } } : m)));
+    const { order_id: orderId } = target.action;
+    if (choice === 'dismiss') {
+      setStatus('dismissed');
+      setMessages((list) => [...list, { id: newId(), role: 'assistant', content: `OK, order #${orderId} stays as it is.` }]);
+      return;
+    }
+    setStatus('working');
+    try {
+      await cancelOrder(orderId);
+      setStatus('done');
+      setMessages((list) => [...list, { id: newId(), role: 'assistant', content: `Order #${orderId} has been cancelled. Any card payment is being refunded, and store credit used on it is back in your balance.`, orders: [{ order_id: orderId, status: 'cancelled' }] }]);
+    } catch (err) {
+      setStatus('failed');
+      setMessages((list) => [...list, { id: newId(), role: 'assistant', content: errorText(err), error: true }]);
+    }
+  }, [messages]);
 
   const sendImage = useCallback(
     (file, text = '') => {
@@ -82,8 +114,8 @@ export const ChatProvider = ({ children }) => {
   const reset = useCallback(() => setMessages([]), []);
 
   const value = useMemo(
-    () => ({ messages, sending, send, sendImage, reset, widgetOpen, setWidgetOpen }),
-    [messages, sending, send, sendImage, reset, widgetOpen]
+    () => ({ messages, sending, send, sendImage, resolveAction, reset, widgetOpen, setWidgetOpen }),
+    [messages, sending, send, sendImage, resolveAction, reset, widgetOpen]
   );
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 };

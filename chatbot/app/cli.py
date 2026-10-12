@@ -3,13 +3,17 @@ Command line tools. Run from the chatbot/ folder:
 
   python -m app.cli check                      test every connection (database, Pinecone, models, S3, Groq, RabbitMQ)
   python -m app.cli setup                      create the two Pinecone indexes
-  python -m app.cli reindex [--no-images]      full rebuild from Postgres (also refits BM25)
+  python -m app.cli reindex [--no-images]      full rebuild: products from Postgres (refits BM25) + policies
+  python -m app.cli index-policies             re-index only the policy files in knowledge/ (after editing them)
+  python -m app.cli policy "how long do refunds take?"
+  python -m app.cli route "only sony under 200"  show how a message is classified and rewritten
   python -m app.cli sync 12 13                 re-index just these products
   python -m app.cli search "wireless earbuds under $100" [--alpha 0.5]
   python -m app.cli image-search path/to/photo.jpg
   python -m app.cli image-search --text "red running shoes"
-  python -m app.cli chat "do you have a gift for a coffee lover?"
-  python -m app.cli eval                       run the evaluation set (see eval/eval_set.json)
+  python -m app.cli chat "do you have a gift for a coffee lover?"   (--token <access token> for order questions)
+  python -m app.cli eval                       retrieval evaluation (see eval/eval_set.json), incl. reranking
+  python -m app.cli eval-routing               intent classification evaluation (eval/routing_set.json)
 """
 import argparse
 import json
@@ -32,7 +36,7 @@ def _print_products(result):
 
 def check():
     """Tries each outside service once and says what's wrong, in plain words."""
-    from app import catalog, chat, config, embeddings, storage
+    from app import catalog, chat, config, embeddings, policies, reranker, storage
 
     def step(name, work, hint):
         try:
@@ -62,10 +66,16 @@ def check():
     step("S3 photos", first_photo, "check S3_BUCKET / S3_REGION / S3 keys in backend/.env")
 
     if chat.llm_enabled():
-        step(f"Groq ({config.LLM_MODEL})", lambda: chat._ask_llm("Reply with just: OK", [], "PRODUCTS: (none found)")[:60],
-             "check GROQ_API_KEY and LLM_MODEL in chatbot/.env")
+        from app import llm
+        for model in (config.LLM_MODEL, config.FAST_LLM_MODEL):
+            step(f"Groq ({model})", lambda m=model: (llm.chat([{"role": "user", "content": "Reply with just: OK"}], model=m).content or "")[:40],
+                 "check GROQ_API_KEY, LLM_MODEL and FAST_LLM_MODEL in chatbot/.env")
     else:
-        print("  --    Groq: GROQ_API_KEY not set, answers will use a simple template")
+        print("  --    Groq: GROQ_API_KEY not set, answers will use simple rules and templates")
+    step("Reranker model", lambda: f"score {reranker.score('lamp', ['Brass desk lamp'])[0]:.2f} for a test pair",
+         "first run downloads it from Hugging Face")
+    step("Policies index", lambda: f"{len(policies.search('how do returns work'))} sections found for a test question",
+         "run: python -m app.cli index-policies")
 
     def rabbit():
         import pika
@@ -96,6 +106,12 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("check")
     sub.add_parser("setup")
+    sub.add_parser("index-policies")
+    p = sub.add_parser("policy")
+    p.add_argument("question")
+    p = sub.add_parser("route")
+    p.add_argument("message")
+    sub.add_parser("eval-routing")
     p = sub.add_parser("reindex")
     p.add_argument("--no-images", action="store_true")
     p = sub.add_parser("sync")
@@ -109,6 +125,7 @@ def main():
     p.add_argument("--text")
     p = sub.add_parser("chat")
     p.add_argument("message")
+    p.add_argument("--token", help="a customer's access token, to try order questions")
     p = sub.add_parser("eval")
     p.add_argument("--images", type=int, default=25, help="how many products to test photo search with")
     args = parser.parse_args()
@@ -120,6 +137,23 @@ def main():
         print("created: " + (", ".join(created) if created else "nothing (both indexes already exist)"))
     elif args.command == "reindex":
         print(json.dumps(indexer.rebuild(with_images=not args.no_images), indent=2))
+        from app import policies
+        print("policies:", json.dumps(policies.index_policies()))
+    elif args.command == "index-policies":
+        from app import policies
+        print(json.dumps(policies.index_policies(), indent=2))
+    elif args.command == "policy":
+        from app import policies
+        for s in policies.search(args.question):
+            print(f"\n[{s['score']}] {s['title']} > {s['section']}\n{s['text']}")
+    elif args.command == "route":
+        from app import router
+        result, how = router.route(args.message)
+        print(f"by {how}: {result.intent}")
+        print(json.dumps([t.model_dump(exclude_defaults=True) for t in result.tasks], indent=2))
+    elif args.command == "eval-routing":
+        from app import evaluate
+        evaluate.run_routing()
     elif args.command == "sync":
         print(json.dumps(indexer.sync_products(args.product_ids), indent=2))
     elif args.command == "search":
@@ -132,10 +166,17 @@ def main():
         else:
             _print_products(retrieval.search_by_image(Path(args.path).read_bytes()))
     elif args.command == "chat":
-        result = chat.answer(args.message)
-        print(result["answer"] + "\n")
-        _print_products(result)
-        print(f"  (LLM used: {result['llm']})")
+        result = chat.answer(args.message, user_token=args.token)
+        print(f"[{result['intent']}]\n{result['answer']}\n")
+        if result["products"]:
+            _print_products(result)
+        for o in result["orders"]:
+            print(f"  order #{o['order_id']}: {o['status']} {o.get('total') or ''}")
+        for src in result["sources"]:
+            print(f"  source: {src['title']} > {src['section']}")
+        if result["action"]:
+            print(f"  [button] {result['action']['label']}")
+        print(f"  steps: {[(s['step'], s['ms']) for s in result['debug']['steps']]}")
     elif args.command == "eval":
         from app import evaluate
         evaluate.run(image_samples=args.images)

@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
 import Icon from '../../components/ui/Icon';
 import { mapProductForCard } from '../../utils/product';
+import { statusBadgeClass } from '../../utils/order';
+import { useChat } from './ChatProvider';
 
 /** **bold** inside a line -> <strong>. Plain React nodes, no HTML injection. */
 const inline = (text) =>
@@ -56,7 +58,44 @@ const ProductChip = ({ product, onOpen }) => {
   );
 };
 
-/** One bubble. Assistant replies can carry product cards underneath. */
+/** [{title, section}] -> "Returns and refunds (Card refunds, Return window) · Shipping (Zones)" */
+const groupSources = (sources) => {
+  const byTitle = new Map();
+  sources.forEach(({ title, section }) => byTitle.set(title, [...(byTitle.get(title) ?? []), section]));
+  return [...byTitle].map(([title, sections]) => `${title} (${sections.join(', ')})`).join(' · ');
+};
+
+const OrderChip = ({ order, onOpen }) => (
+  <Link to={`/orders/${order.order_id}`} className="chat-order" onClick={onOpen}>
+    <Icon name="receipt" size={18} />
+    <span className="chat-order__id">Order #{order.order_id}</span>
+    {order.status && <span className={`badge ${statusBadgeClass(order.status)}`}>{order.status}</span>}
+    {order.total && <span className="chat-order__total">{order.total}</span>}
+  </Link>
+);
+
+/** "Yes, cancel order #12" — nothing is cancelled until this button is pressed. */
+const ActionCard = ({ message }) => {
+  const { resolveAction } = useChat();
+  const { action } = message;
+  const status = action.status;
+  if (status === 'done' || status === 'dismissed') return null;
+  return (
+    <div className="chat-action" role="group" aria-label="Confirm cancellation">
+      <p>Cancel order #{action.order_id}? This can't be undone.</p>
+      <div className="chat-action__buttons">
+        <button type="button" className="chat-action__confirm" disabled={status === 'working'} onClick={() => resolveAction(message.id, 'confirm')}>
+          {status === 'working' ? 'Cancelling…' : action.label}
+        </button>
+        <button type="button" className="chat-action__keep" disabled={status === 'working'} onClick={() => resolveAction(message.id, 'dismiss')}>
+          No, keep it
+        </button>
+      </div>
+    </div>
+  );
+};
+
+/** One bubble. Assistant replies can carry product cards, order links, policy sources and a confirm button. */
 const ChatMessage = ({ message, onOpenProduct }) => {
   const mine = message.role === 'user';
   return (
@@ -71,6 +110,15 @@ const ChatMessage = ({ message, onOpenProduct }) => {
           {mine ? <p>{message.content}</p> : <FormattedText text={message.content} />}
         </div>
       )}
+      {message.sources?.length > 0 && (
+        <p className="chat-msg__sources">From: {groupSources(message.sources)}</p>
+      )}
+      {message.orders?.length > 0 && (
+        <div className="chat-msg__orders">
+          {message.orders.map((o) => <OrderChip key={o.order_id} order={o} onOpen={onOpenProduct} />)}
+        </div>
+      )}
+      {message.action?.type === 'cancel_order' && <ActionCard message={message} />}
       {message.products?.length > 0 && (
         <div className="chat-msg__products">
           {message.products.map((p) => <ProductChip key={p.id} product={p} onOpen={onOpenProduct} />)}

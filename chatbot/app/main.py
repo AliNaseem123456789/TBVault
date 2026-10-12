@@ -7,7 +7,7 @@ Browsers don't call this directly: the Node backend forwards /api/chat and
   GET  /health                     is everything configured?
   GET  /search?query=...           hybrid product search (+ optional filters)
   POST /search/image               form-data: image=<file>  OR  query=<text describing a look>
-  POST /chat                       JSON {message, history}
+  POST /chat                       JSON {message, history, state?}   header X-User-Token (optional)
   POST /chat/image                 form-data: image=<file>, message=<optional text>
 
 Add ?debug=true to see retrieval scores (kept out of normal responses).
@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from app import chat, config, retrieval
 from app.query_parser import Filters
+from app.router import SearchFilters
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("api")
@@ -62,7 +63,9 @@ async def _read_image(image):
 
 @app.get("/health")
 def health():
-    return {"ok": True, "llm": chat.llm_enabled(), "llm_model": config.LLM_MODEL if chat.llm_enabled() else None,
+    llm_on = chat.llm_enabled()
+    return {"ok": True, "llm": llm_on, "llm_model": config.LLM_MODEL if llm_on else None,
+            "fast_llm_model": config.FAST_LLM_MODEL if llm_on else None, "rerank": config.RERANK,
             "text_index": config.TEXT_INDEX_NAME, "image_index": config.IMAGE_INDEX_NAME}
 
 
@@ -106,15 +109,25 @@ class Turn(BaseModel):
     content: str = Field(max_length=4000)
 
 
+class SearchState(BaseModel, extra="forbid"):
+    """What the last answer searched for; sent back by the browser so follow-ups can refine it."""
+    query: str | None = Field(default=None, max_length=300)
+    filters: SearchFilters = Field(default_factory=SearchFilters)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     history: list[Turn] = Field(default_factory=list, max_length=20)
+    state: SearchState | None = None
 
 
 @app.post("/chat", dependencies=[Depends(check_key)])
-def chat_message(body: ChatRequest, debug: bool = False):
+def chat_message(body: ChatRequest, debug: bool = False, x_user_token: str | None = Header(default=None)):
+    """X-User-Token: the signed-in customer's access token, forwarded by the Node backend.
+    It's only used to call the Node API *as that customer* (order tools); never logged."""
     history = [turn.model_dump() for turn in body.history]
-    return _public(_run(lambda: chat.answer(body.message.strip(), history)), debug)
+    state = body.state.model_dump(exclude_defaults=True) if body.state else None
+    return _public(_run(lambda: chat.answer(body.message.strip(), history, state=state, user_token=x_user_token)), debug)
 
 
 @app.post("/chat/image", dependencies=[Depends(check_key)])

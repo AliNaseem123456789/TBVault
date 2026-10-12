@@ -1,7 +1,22 @@
-# TBVault shopping assistant (Phase 1: retrieval)
+# TBVault shopping assistant
 
-A Python service that finds products by **meaning**, by **keywords** and by **photo**, and
-answers questions about them with an LLM that may only use what was retrieved.
+A Python service that finds products by **meaning**, by **keywords** and by **photo**, answers
+questions about store **policies**, and looks up or cancels the customer's **orders**, with an
+LLM that may only use what was retrieved or what a tool returned.
+
+- **Phase 1:** hybrid + photo retrieval (products).
+- **Phase 2:** intent routing, query rewriting, planning, reranking, policies (parent-child),
+  order tools.
+- **Phase 3 (next):** observability and metrics.
+
+```
+message ─► router ──┬─ greeting / small talk / out of scope ─► short reply (no search)
+ (rules, then       ├─ product_search ─► hybrid search ─► rerank ─► LLM
+  gpt-oss-20b JSON) ├─ product_comparison ─► lookups (planner if complex) ─► LLM
+                    ├─ policy_question ─► policy chunks ─► parent sections ─► LLM
+                    └─ order_tracking / order_cancellation ─► LLM picks tools ─► app runs them
+                       as the customer via the Node API ─► LLM (cancel = confirm button)
+```
 
 ```
             ┌──────────────┐   /api/chat, /api/search/...   ┌──────────────────┐
@@ -34,8 +49,10 @@ The chatbot reads `DATABASE_URL`, `DB_SSL_CA_FILE`, `S3_*` and `RABBITMQ_URL` fr
 ```powershell
 python -m app.cli check        # tests database, models, Pinecone, S3, Groq, RabbitMQ one by one
 python -m app.cli setup        # creates the two Pinecone indexes (once)
-python -m app.cli reindex      # loads all products + photos into Pinecone (first time: downloads ~600 MB of models)
+python -m app.cli reindex      # products + photos + policies into Pinecone (first time: downloads ~700 MB of models)
 python -m app.cli search "wireless earbuds under $100"
+python -m app.cli route "only sony under 200"     # see how a message is classified/rewritten
+python -m app.cli policy "how long do refunds take?"
 python -m app.cli chat "a gift for a coffee lover"
 ```
 
@@ -50,7 +67,19 @@ python -m app.sync_worker                   # keeps Pinecone updated when produc
 the bottom-right corner of the shop, and the full page is at `/chat`.
 
 Without the sync worker, everything still works; run `python -m app.cli reindex` after
-editing products. Without `GROQ_API_KEY`, search works and replies use a simple template.
+editing products. Without `GROQ_API_KEY`, routing falls back to keyword rules and replies
+use simple templates, but search, policies and orders all still work.
+
+**Policies** are the markdown files in `knowledge/`. They're drafts written from how the
+shop actually works, so read them and change anything that isn't your policy. Values like
+`{{return_window_days}}`, `{{tax_rate}}`, `{{shipping_zones}}` and `{{commission_rate}}` are
+filled in live from your admin settings. After editing a file, run
+`python -m app.cli index-policies`.
+
+**Orders**: the backend forwards a signed-in customer's own access token, and the
+chatbot calls `/api/order` and `/api/order-details/:id` with it, so the backend's ownership
+checks apply. Cancelling is never done by the bot: it checks the order can be cancelled and
+shows a button, and the click calls the normal `POST /api/orders/:id/cancel`.
 
 ## Tests and evaluation
 
@@ -65,13 +94,16 @@ Tests swap Pinecone and the models for small stand-ins, so they're fast and free
 **evaluation** uses the real thing and tells you how good retrieval actually is:
 
 ```powershell
-python -m app.cli eval
+python -m app.cli eval            # retrieval
+python -m app.cli eval-routing    # intent classification + rewriting
 ```
 
-It prints hit@5 and MRR for each query type (paraphrases, model numbers, filtered queries)
-three ways: dense only, sparse only and hybrid. Then it does the same for photo search. Change
-`HYBRID_ALPHA`, `MIN_SCORE_RATIO` or `IMAGE_MIN_SCORE_RATIO` in `.env`, run it again and
-compare. Add your own cases to `eval/eval_set.json`.
+`eval` prints hit@5 and MRR for each query type (paraphrases, model numbers, filtered
+queries) four ways: dense only, sparse only, hybrid, and hybrid **+ rerank**. That last column
+is how you check whether the reranker earns its ~50 ms. Then it does the same for photo
+search. `eval-routing` runs 28 labelled messages (greetings, follow-ups, comparisons, policies,
+orders, multiple intents, out of scope) through the real router and lists every mistake.
+Change settings in `.env`, run again and compare. Add your own cases to `eval/*.json`.
 
 ## The files, in the order to read them
 
@@ -86,8 +118,16 @@ compare. Add your own cases to `eval/eval_set.json`.
 | `app/query_parser.py` | Pulling hard filters (price, stock, brand) out of plain English. |
 | `app/retrieval.py` | **The R in RAG**: hybrid query → score cutoff → Postgres check → hard rules. Read this one twice. |
 | `app/catalog.py` | Why Postgres, not Pinecone, decides prices, stock and visibility. |
-| `app/chat.py` | **The G in RAG**: a bounded fact sheet plus strict instructions, with a fallback when the LLM is down. |
+| `app/chat.py` | **The orchestrator**: route → per-intent handler → answer. Fact sheets plus strict instructions, and a fallback when the LLM is down. |
 | `app/main.py` | The HTTP API. |
+| **Phase 2** | |
+| `app/llm.py` | The only Groq code. `ask_json` = JSON mode + pydantic validation + one retry; that's how you get structured output you can trust. |
+| `app/router.py` | **Intent classification + query rewriting**: rules for greetings, then the fast model fills a strict schema. Read the `SYSTEM` prompt. |
+| `app/planner.py` | **Planning**: when a request needs several lookups (and when it doesn't), with a plan limited to three operations. |
+| `app/reranker.py` | **Bi-encoder vs cross-encoder**, and when reranking is skipped. |
+| `app/policies.py` | **Parent-child retrieval**: search small chunks, answer from their whole section. |
+| `app/tools.py` | **Tool calling done safely**: allow-lists, validated arguments, the app executes, a confirmation for actions. |
+| `knowledge/*.md` | The policy texts (yours to edit). |
 | `app/sync_worker.py` | Keeping the index in sync without cross-system transactions: events + retries + reindex. |
 | `app/evaluate.py` | Measuring retrieval quality (hit@k, MRR) instead of guessing. |
 
@@ -118,21 +158,38 @@ compare. Add your own cases to `eval/eval_set.json`.
 - **No LLM needed for search.** If `GROQ_API_KEY` is missing or Groq fails, you still get the
   products and a template reply.
 
-## Known limitations (Phase 1)
+## Phase 2 design decisions
 
-- Only the current message is searched. Follow-ups like "cheaper ones?" aren't rewritten
-  into a full query, though the LLM does see the last few messages.
-- Brand and category are recognised only when their exact name appears in the message.
-- No reranking: the order is the hybrid score order.
-- Questions about orders, shipping or returns aren't answered yet (no FAQ documents indexed).
+- **Rules before the LLM.** "hi", "thanks" and "bye" never cost a model call or a search.
+- **Classification and extraction in one small JSON call** (gpt-oss-20b), validated by the
+  `Route` schema: unknown intents or fields, invalid ids, more than 3 tasks → rejected →
+  retried once → keyword rules. The router only describes the request; it can't run anything.
+- **Complexity is decided separately, by rules** (`planner.needs_plan`). Only comparisons that
+  must first *find* a set of products get a plan. Many filters on one search ≠ complex.
+- **Conversation state is explicit.** Each reply returns `state` (the last search's query and
+  filters). The browser sends it back, and the router sees it as `PREVIOUS SEARCH`, so "only
+  Sony under $200" keeps "headphones" and replaces the price.
+- **Fusion stays as it was.** Hybrid already merges dense and sparse inside Pinecone (alpha
+  weighting), so RRF isn't needed; the cross-encoder re-reads the top `RERANK_CANDIDATES`.
+- **Live data never comes from vectors.** Orders come from the backend API, prices and stock
+  from Postgres, and placeholder values in policies from settings at answer time.
+- **Actions need a human click.** The model can only *propose* a cancellation; the button the
+  app attaches is what cancels, through the existing endpoint and its business rules.
+- **Logs**: each chat writes one `chat {...}` JSON line: intent, routing method, rewritten query,
+  filters, retrieval and rerank scores, tool names, outcomes and timings. Tokens, emails and
+  addresses are never logged. Add `?debug=true` to `/chat` to get the same in the response.
+
+## Known limitations
+
+- Comparisons can only use what's in product descriptions. There's no specification table,
+  so the bot says when something like camera quality isn't listed.
+- Policies are drafts: review `knowledge/*.md` before going live.
+- Guests can't use order tools; they're pointed to the Track order page.
+- Photo search doesn't use routing (a photo is always a product search).
 - Indexing photos is the slow part: each one is downloaded and run through CLIP on your CPU.
 
-## Where Phase 2 plugs in
+## Where Phase 3 plugs in
 
-| Phase 2 feature | Where it goes |
-|---|---|
-| Reranking | `retrieval.search_products`, after `_resolve`. Rerank the ~20 products with a cross-encoder. |
-| Query rewriting | `chat.answer`, before `query_parser.parse`. The LLM turns history + message into a standalone query. |
-| LLM tool calling | Replaces `query_parser.parse`. The LLM fills the same `Filters` and can call order/account tools through the Node API. |
-| Parent-child retrieval (FAQs, policies) | A new `documents` index. `indexer` gains a chunker; `retrieval` gains a document search. Keep `product:` ids as they are. |
-| Phase 3 metrics | The `debug` field every search already returns (scores, ids), plus timings around each step. |
+The `Trace` in `chat.py` already times every step and records routing decisions, scores,
+rerank results and tool outcomes. Phase 3 can export these as metrics (Prometheus, which
+the backend already uses) and add dashboards, alerting and evaluation runs over time.

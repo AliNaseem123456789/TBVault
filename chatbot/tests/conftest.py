@@ -23,7 +23,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from app import bm25, config, db, embeddings, storage, vector_store
+from app import bm25, config, db, embeddings, policies, storage, vector_store
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "")
 
@@ -33,36 +33,41 @@ TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "")
 # ----------------------------------------------------------------------------
 class FakeIndex:
     def __init__(self):
-        self.vectors = {}
+        self.spaces = {}    # namespace -> {id: vector}
         self.down = False   # set True to simulate an outage
+
+    @property
+    def vectors(self):
+        """The default namespace (products / photos)."""
+        return self.spaces.setdefault("", {})
 
     def _check(self):
         if self.down:
             raise ConnectionError("pinecone is down")
 
-    def upsert(self, vectors, show_progress=False):
+    def upsert(self, vectors, show_progress=False, namespace=""):
         self._check()
         for v in vectors:
-            self.vectors[v["id"]] = v
+            self.spaces.setdefault(namespace, {})[v["id"]] = v
 
-    def delete(self, ids):
+    def delete(self, ids, namespace=""):
         self._check()
         for i in ids:
-            self.vectors.pop(i, None)
+            self.spaces.setdefault(namespace, {}).pop(i, None)
 
-    def list(self, prefix):
+    def list(self, prefix, namespace=""):
         self._check()
-        ids = sorted(i for i in self.vectors if i.startswith(prefix))
+        ids = sorted(i for i in self.spaces.get(namespace, {}) if i.startswith(prefix))
         yield [SimpleNamespace(id=i) for i in ids]
 
     @staticmethod
     def _matches(metadata, flt):
         return all(metadata.get(key) == cond["$eq"] for key, cond in (flt or {}).items())
 
-    def query(self, vector, top_k, include_metadata=True, sparse_vector=None, filter=None):
+    def query(self, vector, top_k, include_metadata=True, sparse_vector=None, filter=None, namespace=""):
         self._check()
         hits = []
-        for v in self.vectors.values():
+        for v in self.spaces.get(namespace, {}).values():
             if not self._matches(v["metadata"], filter):
                 continue
             score = float(np.dot(vector, v["values"]))
@@ -138,8 +143,12 @@ def fake_world(monkeypatch, tmp_path):
     photos = {"zq/red.png": png("red"), "zq/blue.png": png("blue"), "zq/green.png": png("green")}
     monkeypatch.setattr(storage, "download", lambda key: photos[key])
     monkeypatch.setattr(config, "BM25_PARAMS_FILE", tmp_path / "bm25.json")
+    monkeypatch.setattr(config, "POLICY_BM25_FILE", tmp_path / "bm25_policies.json")
     monkeypatch.setattr(config, "GROQ_API_KEY", "")
     monkeypatch.setattr(config, "INTERNAL_KEY", "")
+    monkeypatch.setattr(config, "RERANK", False)          # tests that want reranking turn it on with a fake model
+    monkeypatch.setattr(policies, "_bm25", None)
+    policies._values_cache["at"] = 0
     bm25.set_current(None)
     return SimpleNamespace(text=text, images=images)
 
