@@ -3,6 +3,7 @@ import { useAuth } from "./AuthProvider";
 import { useNavigate, useLocation, useSearchParams, Link } from "react-router-dom";
 import AuthLayout from "./AuthLayout";
 import Button from "../../components/ui/Button";
+import { API_BASE_URL } from "../../api/apiClient";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -34,7 +35,7 @@ const Login = () => {
   };
 
   const handleGoogleLogin = () => {
-    window.location.href = "http://localhost:3000/api/auth/google";
+    window.location.href = `${API_BASE_URL}/auth/google`;
   };
 
   return (

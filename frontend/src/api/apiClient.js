@@ -1,6 +1,9 @@
 import axios from "axios";
 // Set VITE_API_URL in frontend/.env for other environments.
 const Base_URL = import.meta.env.VITE_API_URL || "http://localhost:3000/api"
+// For full-page redirects that can't go through axios (e.g. "Continue with Google").
+// "/api" in production (same site), http://localhost:3000/api in development.
+export const API_BASE_URL = Base_URL
 const api = axios.create({
   baseURL: Base_URL,
   withCredentials: true
