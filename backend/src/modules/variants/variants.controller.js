@@ -1,6 +1,7 @@
 import prisma from "../../config/db.js"
 import { parseVariantInput } from "./variant.validation.js"
 import { notifyBackInStock } from "../../services/inventory/inventory.service.js"
+import { notifyCatalogChanged } from "../../events/publishers/catalog.publisher.js"
 
 const parseId = (value) => {
     const id = Number(value)
@@ -33,6 +34,7 @@ export const createVariant = async (req, res) => {
         const product = await prisma.product.findUnique({ where: { id: productId }, select: { id: true } })
         if (!product) return res.status(404).json({ message: "Product doesn't exist" })
         const variant = await prisma.productVariant.create({ data: { ...data, product_id: productId } })
+        notifyCatalogChanged({ product_ids: [productId] })
         return res.status(201).json({ message: "Variant created", data: { variant } })
     } catch (err) {
         if (err.code === "P2002") return res.status(409).json({ message: "Another variant already uses that SKU" })
@@ -54,6 +56,7 @@ export const updateVariant = async (req, res) => {
         if (before.stock <= 0 && variant.stock > 0 && variant.is_active) {
             notifyBackInStock({ productId: variant.product_id, variantId: variant.id })
         }
+        notifyCatalogChanged({ product_ids: [variant.product_id] })
         return res.status(200).json({ message: "Variant updated", data: { variant } })
     } catch (err) {
         if (err.code === "P2002") return res.status(409).json({ message: "Another variant already uses that SKU" })
@@ -71,7 +74,8 @@ export const deleteVariant = async (req, res) => {
         if (ordered > 0) {
             return res.status(409).json({ message: "This option is in past orders. Turn it off instead of deleting it." })
         }
-        await prisma.productVariant.delete({ where: { id: variantId } })
+        const deleted = await prisma.productVariant.delete({ where: { id: variantId } })
+        notifyCatalogChanged({ product_ids: [deleted.product_id] })
         return res.status(204).send()
     } catch (err) {
         if (err.code === "P2025") return res.status(404).json({ message: "Variant not found" })

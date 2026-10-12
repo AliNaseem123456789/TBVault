@@ -5,6 +5,7 @@ import { fromCents, toCents } from "../../utils/pricing.helpers.js"
 import { PUBLIC_PRODUCT_WHERE } from "../../utils/visibility.js"
 import { parseAmount } from "../wallet/wallet.validation.js"
 import { SELLER_STATUSES, SELLER_NEXT, slugify, parseSellerApplication, parseSellerAdminInput } from "./sellers.validation.js"
+import { notifyCatalogChanged } from "../../events/publishers/catalog.publisher.js"
 
 const parseId = (value) => {
     const id = Number(value)
@@ -95,6 +96,7 @@ export const updateMySeller = async (req, res) => {
     try {
         if (data.store_name && data.store_name !== req.seller.store_name) data.slug = await uniqueSlug(data.store_name, req.seller.id)
         const seller = await prisma.seller.update({ where: { id: req.seller.id }, data })
+        if (data.store_name) notifyCatalogChanged({ seller_id: seller.id })   // "Sold by" is part of the search text
         return res.status(200).json({ message: "Store updated", data: { seller } })
     } catch (err) {
         if (err.code === "P2002") return res.status(409).json({ message: "That store name is taken" })
@@ -305,6 +307,7 @@ export const setSellerStatus = async (req, res) => {
             }
             return updated
         })
+        notifyCatalogChanged({ seller_id: id })   // their products appear in / disappear from search
         const verb = { APPROVED: "approved", REJECTED: "rejected", SUSPENDED: "suspended", PENDING: "updated" }[status]
         return res.status(200).json({ message: `Seller ${verb}`, data: { seller } })
     } catch (err) {

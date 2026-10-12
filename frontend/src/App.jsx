@@ -29,6 +29,8 @@ import Sell from "./pages/Sell/Sell";
 import SellerDashboard from "./pages/Seller/SellerDashboard";
 import Wallet from "./pages/Wallet/Wallet";
 import StorePage from "./pages/Store/StorePage";
+import ChatPage from "./pages/Chat/ChatPage";
+import { ChatProvider } from "./features/chatbot/ChatProvider";
 
 const App = () => {
   return (
@@ -36,6 +38,7 @@ const App = () => {
       <AuthProvider>
         <CartProvider>
         <WishlistProvider>
+        <ChatProvider>
         <Routes>
           {/* Public storefront pages — share the Navbar/Footer/cart-drawer
               shell from Layout.jsx. Add new public pages (Shop, Product,
@@ -52,6 +55,7 @@ const App = () => {
             <Route path="/track/:token" element={<TrackOrder />} />
             <Route path="/sell" element={<Sell />} />
             <Route path="/stores/:slug" element={<StorePage />} />
+            <Route path="/chat" element={<ChatPage />} />
 
             {/* Logged-in pages that are still part of the storefront (keep
                 the Navbar/Footer/cart) nest ProtectedRoute here instead of
@@ -94,6 +98,7 @@ const App = () => {
           <Route path="/sign-up" element={<Signup />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </ChatProvider>
         </WishlistProvider>
         </CartProvider>
       </AuthProvider>

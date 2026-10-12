@@ -2,6 +2,7 @@ export const EXCHANGES = {
     AUTH: "auth.events",
     ORDER: "order.events",
     INVENTORY: "inventory.events",
+    CATALOG: "catalog.events",
 }
 
 export const AUTH_EVENTS={
@@ -18,6 +19,11 @@ export const ORDER_EVENTS = {
     ORDER_PAID: "order.paid",
     ORDER_REFUNDED: "order.refunded",
     RETURN_UPDATED: "order.return.updated",
+}
+
+// Products changed in a way search cares about (read by the chatbot's sync worker).
+export const CATALOG_EVENTS = {
+    CHANGED: "catalog.changed",
 }
 
 export const INVENTORY_EVENTS = {

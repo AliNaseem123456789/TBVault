@@ -1,0 +1,42 @@
+{
+  "_about": "expect = parts of product names that count as a correct answer (any one is enough). Cases whose products aren't in the database are skipped. check_rules = also verify price/stock/sale rules on every returned product.",
+  "text": [
+    {"type": "paraphrase", "query": "something to make my eyelashes look longer", "expect": ["Mascara"]},
+    {"type": "paraphrase", "query": "earbuds without any wires", "expect": ["Airpods", "Wireless Earphones"]},
+    {"type": "paraphrase", "query": "luxury watch for diving", "expect": ["Submariner"]},
+    {"type": "paraphrase", "query": "drink that wakes me up in the morning", "expect": ["Coffee"]},
+    {"type": "paraphrase", "query": "bag I can carry on my back", "expect": ["Backpack"]},
+    {"type": "paraphrase", "query": "chair for a meeting room", "expect": ["Conference Chair"]},
+    {"type": "paraphrase", "query": "keep my phone charged when I'm out", "expect": ["Battery Pack", "Charger"]},
+    {"type": "paraphrase", "query": "stick for taking photos of myself", "expect": ["Selfie Stick", "Monopod"]},
+    {"type": "paraphrase", "query": "tool to flip food in a pan", "expect": ["Turner", "Spatula"]},
+    {"type": "paraphrase", "query": "something to cut vegetables on", "expect": ["Chopping Board"]},
+    {"type": "paraphrase", "query": "light for my desk", "expect": ["Table Lamp", "Selfie Lamp"]},
+    {"type": "paraphrase", "query": "something to sleep on", "expect": ["Bed"]},
+
+    {"type": "keyword", "query": "XPS 13 9300", "expect": ["XPS 13 9300"]},
+    {"type": "keyword", "query": "Galaxy S10", "expect": ["Galaxy S10"]},
+    {"type": "keyword", "query": "Z800", "expect": ["Z800"]},
+    {"type": "keyword", "query": "Yoga 920", "expect": ["Yoga 920"]},
+    {"type": "keyword", "query": "F19 pro", "expect": ["F19 Pro"]},
+    {"type": "keyword", "query": "CK One", "expect": ["CK One"]},
+    {"type": "keyword", "query": "iPhone 13 Pro", "expect": ["iPhone 13 Pro"]},
+    {"type": "keyword", "query": "Zenbook", "expect": ["Zenbook"]},
+    {"type": "keyword", "query": "MagSafe", "expect": ["MagSafe"]},
+
+    {"type": "filtered", "query": "smartphones under $300", "expect": ["Oppo", "Realme", "Vivo", "iPhone 5s", "iPhone 6", "Samsung Galaxy S7"], "check_rules": true},
+    {"type": "filtered", "query": "laptops over $1000", "expect": ["MacBook", "Zenbook", "Matebook", "XPS"], "check_rules": true},
+    {"type": "filtered", "query": "rolex watch", "expect": ["Rolex"]},
+    {"type": "filtered", "query": "kitchen tools under $10 in stock", "expect": ["Spoon", "Fork", "Peeler", "Whisk", "Spatula", "Turner", "Tongs", "Grater", "Sieve", "Strainer"], "check_rules": true},
+    {"type": "filtered", "query": "perfume between $50 and $150", "expect": ["Eau De", "CK One", "J'adore"], "check_rules": true},
+    {"type": "filtered", "query": "shoes on sale", "expect": ["Shoes", "Sneakers", "Jordan", "Cleats", "Trainers", "Slipper"], "check_rules": true}
+  ],
+  "text_to_image": [
+    {"query": "red shoes", "expect": ["Red Shoes", "Jordan 1 Red", "Off White & Red", "Off White Red"]},
+    {"query": "dark sunglasses", "expect": ["Sun Glasses", "Sunglasses", "Black Glasses"]},
+    {"query": "a green earring", "expect": ["Green Crystal Earring", "Green Oval Earring"]},
+    {"query": "a sports motorbike", "expect": ["Sportbike", "Z800", "MotoGP"]},
+    {"query": "a wooden bed", "expect": ["Bed"]},
+    {"query": "a basketball", "expect": ["Basketball"]}
+  ]
+}

@@ -204,3 +204,20 @@ API from `CatalogApiContext` (`pages/Admin/catalogContext.js`): admin endpoints 
 **Store credit.** `users.credit_balance` changes only together with a `credit_transactions` row
 (`services/wallet/wallet.service.js`). Credit can pay part or all of an order; a card pays the
 rest. Refunds go back the way they were paid, or to store credit when the admin chooses.
+
+## 7. AI shopping assistant (added October 2026)
+
+A floating chat button on every storefront page (`features/chatbot/ChatWidget.jsx`, rendered
+by `Layout`) and a full page at `/chat` (`pages/Chat/ChatPage.jsx`). Both show the **same
+conversation**, kept in `ChatProvider` (wrapped around the app in `App.jsx`, saved to
+sessionStorage). The expand icon in the widget opens `/chat`; the widget hides itself there.
+
+| Piece | Job |
+|---|---|
+| `ChatProvider.jsx` | messages, `send(text)`, `sendImage(file, text)`, `reset()`, widget open/closed |
+| `ChatPanel.jsx` | message list + message box (Enter sends, camera button attaches a photo) |
+| `ChatMessage.jsx` | one bubble; assistant replies list product cards (via `mapProductForCard`) |
+| `api/chatbot.api.js` | `POST /chat`, `POST /chat/image`, `GET /search/smart`, `POST /search/image` |
+
+The backend forwards these to the Python service in `chatbot/` (see `chatbot/README.md`).
+When that service isn't running, the API answers 503 and the chat shows a friendly error.

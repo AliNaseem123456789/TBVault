@@ -1,5 +1,6 @@
 import prisma from "../../config/db.js"
 import { PUBLIC_PRODUCT_WHERE } from "../../utils/visibility.js"
+import { notifyCatalogChanged } from "../../events/publishers/catalog.publisher.js"
 
 const parseBrandName = (value) => {
     const name = typeof value === "string" ? value.trim() : ""
@@ -43,6 +44,7 @@ export const updateBrand = async (req, res) => {
     if (error) return res.status(400).json({ message: error })
     try {
         const brand = await prisma.brand.update({ where: { id }, data: { name } })
+        notifyCatalogChanged({ brand_id: id })
         return res.status(200).json({ message: "Brand updated", data: { brand } })
     } catch (err) {
         if (err.code === "P2025") return res.status(404).json({ message: "Brand not found" })
@@ -57,7 +59,10 @@ export const deleteBrand = async (req, res) => {
     const id = Number(req.params.brandId)
     if (!Number.isInteger(id) || id < 1) return res.status(400).json({ message: "invalid brand id" })
     try {
+        // Collect the products first: after the delete they no longer point at this brand.
+        const products = await prisma.product.findMany({ where: { brand_id: id }, select: { id: true } })
         await prisma.brand.delete({ where: { id } })
+        if (products.length) notifyCatalogChanged({ product_ids: products.map((p) => p.id) })
         return res.status(204).send()
     } catch (err) {
         if (err.code === "P2025") return res.status(404).json({ message: "Brand not found" })

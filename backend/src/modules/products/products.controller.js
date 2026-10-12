@@ -9,6 +9,7 @@ import { parseProductInput } from "./product.validation.js";
 import { PUBLIC_PRODUCT_WHERE, PUBLIC_SELLER_SELECT, isPublicProduct } from "../../utils/visibility.js";
 
 import { ensurePlatformSeller } from "../../services/marketplace/platform-seller.service.js";
+import { notifyCatalogChanged } from "../../events/publishers/catalog.publisher.js"
 
 // Products added by an admin belong to the store's own (platform) seller unless seller_id is given.
 const platformSellerId = async () => (await ensurePlatformSeller()).id;
@@ -30,6 +31,7 @@ export const createProducts=async(req,res)=>{
             data.seller_id = await platformSellerId()
         }
         const product=await prisma.product.create({ data })
+        notifyCatalogChanged({ product_ids: [product.id] })
         return res.status(201).json({message:"product Created",data:{product}})
     }catch(err){
         if(err.code==="P2003"){
@@ -312,6 +314,7 @@ export const updateProductsById=async(req,res)=>{
         const product=await prisma.product.update({where:{id:id},data})
         // Restocked from zero: tell everyone who asked to be notified.
         if(before && before.stock<=0 && product.stock>0) notifyBackInStock({productId:id,variantId:null})
+        notifyCatalogChanged({ product_ids: [id] })
         return res.status(200).json({message:"product found",data:{product}})
     }catch(err){
         if(err.code==="P2025"){
@@ -338,6 +341,7 @@ export const deleteProducts=async(req,res)=>{
         }
         const images=await prisma.productImage.findMany({where:{product_id:id},select:{key:true}})
         await prisma.product.delete({where:{id:id}})
+        notifyCatalogChanged({ product_ids: [id] })
         await Promise.all(images.map(({key})=>storage.send(new DeleteObjectCommand({Bucket:BUCKET,Key:key})).catch(()=>{})))
         return res.status(204).send()
     }catch(err){
@@ -447,6 +451,7 @@ if (primaryIndex !== undefined &&(!Number.isInteger(primaryIndex) ||primaryIndex
     await prisma.productImage.createMany({
       data: uploaded
     });
+    notifyCatalogChanged({ product_ids: [productId] });
 
     return res.status(201).json({
       message: "Images uploaded",
@@ -487,6 +492,7 @@ export const deleteProductImage = async (req, res) => {
       const next = await prisma.productImage.findFirst({ where: { product_id: productId }, orderBy: { created_at: "asc" } });
       if (next) await prisma.productImage.update({ where: { id: next.id }, data: { is_primary: true } });
     }
+    notifyCatalogChanged({ product_ids: [productId] });
     await storage.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: image.key })).catch((err) =>
       console.error("[storage] failed to delete object", image.key, err.message)
     );
@@ -511,6 +517,7 @@ export const setPrimaryImage = async (req, res) => {
       prisma.productImage.updateMany({ where: { product_id: productId }, data: { is_primary: false } }),
       prisma.productImage.update({ where: { id: image.id }, data: { is_primary: true } }),
     ]);
+    notifyCatalogChanged({ product_ids: [productId] });
     return res.status(200).json({ message: "Primary image updated" });
   } catch (err) {
     console.error("setPrimaryImage error:", err);

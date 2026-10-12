@@ -29,6 +29,7 @@ import brandRoutes from "./modules/brands/brands.routes.js"
 import sellerRoutes from "./modules/sellers/sellers.routes.js"
 import sellerOrderRoutes from "./modules/seller-orders/seller-orders.routes.js"
 import walletRoutes from "./modules/wallet/wallet.routes.js"
+import chatbotRoutes from "./modules/chatbot/chatbot.routes.js"
 
 // The Express app without listening or connecting to RabbitMQ, so tests can import it.
 const app = express()
@@ -74,6 +75,7 @@ app.use("/api", brandRoutes)
 app.use("/api", sellerRoutes)
 app.use("/api", sellerOrderRoutes)
 app.use("/api", walletRoutes)
+app.use("/api", chatbotRoutes)
 
 app.get("/metrics", async (req, res) => {
   res.set("Content-Type", register.contentType);

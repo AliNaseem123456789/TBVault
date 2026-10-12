@@ -3,6 +3,7 @@ import Marquee from '../ui/Marquee';
 import Navbar from './Navbar';
 import Footer from './Footer';
 import CartDrawer from '../../features/cart/CartDrawer';
+import ChatWidget from '../../features/chatbot/ChatWidget';
 
 const ANNOUNCEMENTS = ['Free shipping over $50', 'New arrivals every week', '30-day easy returns'];
 
@@ -25,6 +26,7 @@ const Layout = () => {
       </main>
       <Footer />
       <CartDrawer />
+      <ChatWidget />
     </>
   );
 };

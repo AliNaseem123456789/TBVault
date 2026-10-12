@@ -1,6 +1,7 @@
 import prisma from "../../config/db.js"
 import { withSalePricing } from "../../services/pricing/pricing.service.js"
 import { PUBLIC_PRODUCT_WHERE } from "../../utils/visibility.js"
+import { notifyCatalogChanged } from "../../events/publishers/catalog.publisher.js"
 
 const parseId = (value) => {
     const id = Number(value)
@@ -58,6 +59,7 @@ export const updateCategoryName = async (req, res) => {
     if (!name) return res.status(400).json({ message: "name must be 1-100 characters" })
     try {
         const category = await prisma.category.update({ where: { id }, data: { name } })
+        notifyCatalogChanged({ category_id: id })
         return res.status(200).json({ message: "Category updated", data: category })
     } catch (err) {
         if (err.code === "P2025") return res.status(404).json({ message: "Category not found" })

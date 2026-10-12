@@ -11,6 +11,7 @@ export async function connectRabbitMQ() {
     await channel.assertExchange(EXCHANGES.AUTH, "topic", { durable: true })
     await channel.assertExchange(EXCHANGES.ORDER, "topic", { durable: true })
     await channel.assertExchange(EXCHANGES.INVENTORY, "topic", { durable: true })
+    await channel.assertExchange(EXCHANGES.CATALOG, "topic", { durable: true })
 
     connection.on("error", (err) => console.error("[rabbitmq] connection error:", err.message))
     connection.on("close", () => { channel = null; console.error("[rabbitmq] connection closed") })

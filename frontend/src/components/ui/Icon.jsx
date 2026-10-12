@@ -29,6 +29,10 @@ const paths = {
   store: 'M4 9l1.5-5h13L20 9 M4 9v11h16V9 M4 9a2.7 2.7 0 005.3 0 2.7 2.7 0 005.4 0 2.7 2.7 0 005.3 0 M10 20v-5h4v5',
   wallet: 'M4 7h15a1 1 0 011 1v11H4a1 1 0 01-1-1V6a2 2 0 012-2h11v3 M16 13.5h.01',
   gift: 'M4 11h16v9H4z M3 7h18v4H3z M12 7v13 M12 7c-1.5-3-5-3-5-1s3 1 5 1z M12 7c1.5-3 5-3 5-1s-3 1-5 1z',
+  chat: 'M4 5h16v11H9l-5 4V5z M8 9.5h8 M8 12.5h5',
+  send: 'M4 12l16-8-6 16-2.5-6.5L4 12z M11.5 13.5L20 4',
+  expand: 'M14 4h6v6 M20 4l-7 7 M10 20H4v-6 M4 20l7-7',
+  camera: 'M4 8h3l2-3h6l2 3h3v11H4V8z M12 16.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z',
 };
 
 const Icon = ({ name, size = 20, strokeWidth = 1.8, className = '' }) => {
