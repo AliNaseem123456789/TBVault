@@ -9,7 +9,8 @@
 # What it makes (safe to run again: it reuses anything that already exists):
 #   - a network (VCN) with a public subnet, internet access, and ports 22/80/443 open
 #   - an SSH key pair in ~/.ssh/tbvault-oracle.key (download it to your PC afterwards)
-#   - an Ubuntu 22.04 ARM server: VM.Standard.A1.Flex, 4 CPUs, 24 GB RAM (the whole free allowance)
+#   - an Ubuntu 22.04 ARM server: VM.Standard.A1.Flex, 2 CPUs, 12 GB RAM
+#     (the whole Always Free allowance since 15 June 2026; it used to be 4 CPUs / 24 GB)
 # At the end it prints the server's public IP.
 #
 # Free ARM servers are often "out of capacity". To keep retrying every 5 minutes until one
@@ -108,9 +109,9 @@ EOF
     ADS=$(oci iam availability-domain list -c "$C" --query "join(' ', data[].name)" --raw-output)
 
     # Free ARM servers are popular, so a zone can be "out of capacity". Try every zone with
-    # 4 CPU / 24 GB, then 2 CPU / 12 GB, then 1 CPU / 6 GB (enough for the chatbot).
+    # 2 CPU / 12 GB (the free maximum), then 1 CPU / 6 GB (still enough for the chatbot).
     try_launch() {
-        for SIZE in '{"ocpus":4,"memoryInGBs":24}' '{"ocpus":2,"memoryInGBs":12}' '{"ocpus":1,"memoryInGBs":6}'; do
+        for SIZE in '{"ocpus":2,"memoryInGBs":12}' '{"ocpus":1,"memoryInGBs":6}'; do
             for AD in $ADS; do
                 echo "$(date +%H:%M) trying $AD with $SIZE ..."
                 if OUT=$(oci compute instance launch -c "$C" --availability-domain "$AD" --display-name "$NAME" \
