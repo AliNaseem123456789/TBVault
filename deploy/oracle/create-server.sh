@@ -122,6 +122,10 @@ EOF
                 fi
                 if echo "$OUT" | grep -qi "capacity"; then
                     echo "  out of capacity there"
+                    sleep 30   # be gentle: Oracle limits how fast you can ask
+                elif echo "$OUT" | grep -qi "TooManyRequests"; then
+                    echo "  Oracle says we're asking too often; waiting 2 minutes"
+                    sleep 120
                 else
                     echo "$OUT" >&2
                     exit 1
