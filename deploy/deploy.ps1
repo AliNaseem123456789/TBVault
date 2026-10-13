@@ -56,6 +56,8 @@ if (-not (Test-Path $prodEnv)) {
         CORS_ORIGINS = "https://$Domain"
         GOOGLE_REDIRECT_URI = "https://$Domain/api/auth/google/callback"
         REDIS_URL = "redis://127.0.0.1:6379"
+        # Local broker on the server. For a hosted one (CloudAMQP), put its amqps:// URL here;
+        # release.sh then switches the local RabbitMQ off.
         RABBITMQ_URL = "amqp://127.0.0.1:5672"
         DB_SSL_CA_FILE = "./certs/rds-global-bundle.pem"
         S3_ENDPOINT = ""

@@ -5,8 +5,12 @@ export const EXCHANGES = { AUTH: "auth.events", ORDER: "order.events", INVENTORY
 let connection;
 let channel;
 
+// Heartbeats let both sides notice a dead connection (important with a hosted broker like CloudAMQP).
+const withHeartbeat = (url, seconds = 30) =>
+    !url || /[?&]heartbeat=/.test(url) ? url : `${url}${url.includes("?") ? "&" : "?"}heartbeat=${seconds}`;
+
 export async function connectRabbitMQ() {
-    connection = await amqp.connect(process.env.RABBITMQ_URL);
+    connection = await amqp.connect(withHeartbeat(process.env.RABBITMQ_URL));
     connection.on("error", (err) => console.error("[rabbitmq] connection error:", err.message));
     connection.on("close", () => {
         console.error("[rabbitmq] connection closed, exiting so the process manager restarts the worker");

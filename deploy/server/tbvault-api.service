@@ -1,7 +1,8 @@
 [Unit]
 Description=TBVault API
-After=network-online.target redis-server.service rabbitmq-server.service
-Wants=network-online.target redis-server.service rabbitmq-server.service
+After=network-online.target redis-server.service
+Wants=network-online.target redis-server.service
+# RabbitMQ may be local or hosted (CloudAMQP); the API connects to it in the background.
 
 [Service]
 User=tbvault
@@ -10,7 +11,7 @@ Environment=NODE_ENV=production
 ExecStart=/usr/bin/node --max-old-space-size=320 server.js
 Restart=always
 RestartSec=3
-# RabbitMQ can take a few seconds after boot; keep retrying instead of giving up.
+# Keep restarting after crashes instead of giving up.
 StartLimitIntervalSec=0
 
 [Install]

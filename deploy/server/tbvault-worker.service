@@ -1,7 +1,8 @@
 [Unit]
 Description=TBVault email worker
-After=network-online.target rabbitmq-server.service
-Wants=network-online.target rabbitmq-server.service
+After=network-online.target
+Wants=network-online.target
+# RabbitMQ may be local or hosted (CloudAMQP); if it's unreachable the worker exits and is restarted.
 
 [Service]
 User=tbvault

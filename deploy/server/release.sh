@@ -33,6 +33,27 @@ sudo -u tbvault -H npm ci --no-audit --no-fund --loglevel=error
 sudo -u tbvault -H npx prisma generate >/dev/null
 sudo -u tbvault -H npx prisma migrate deploy
 
+echo "==> systemd services"
+cp "$HERE/tbvault-api.service" "$HERE/tbvault-worker.service" /etc/systemd/system/
+systemctl daemon-reload
+
+# RabbitMQ: local (RABBITMQ_URL=amqp://127.0.0.1:5672) or hosted (e.g. CloudAMQP, amqps://...).
+# With a hosted broker the local one is switched off to free memory. The URL holds a password: never print it.
+rabbit_url="$(grep -E '^RABBITMQ_URL=' "$APP/shared/.env" | head -1 | cut -d= -f2- || true)"
+case "$rabbit_url" in
+  *127.0.0.1*|*localhost*|"")
+    if ! systemctl is-enabled --quiet rabbitmq-server 2>/dev/null; then
+      echo "==> RabbitMQ: using the local broker"
+      systemctl enable --now rabbitmq-server
+    fi ;;
+  *)
+    echo "==> RabbitMQ: using a hosted broker"
+    if systemctl is-active --quiet rabbitmq-server 2>/dev/null || systemctl is-enabled --quiet rabbitmq-server 2>/dev/null; then
+      echo "    switching off the local RabbitMQ (no longer needed)"
+      systemctl disable --now rabbitmq-server
+    fi ;;
+esac
+
 previous="$(readlink -f "$APP/current" 2>/dev/null || true)"
 ln -sfn "$release" "$APP/current"
 systemctl restart tbvault-api tbvault-worker
