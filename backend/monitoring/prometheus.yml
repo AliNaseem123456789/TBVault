@@ -1,13 +1,13 @@
-﻿
 global:
-
   scrape_interval: 5s
 
 scrape_configs:
-
+  # Node backend (prom-client): http_request_duration_seconds, http_requests_total, ...
   - job_name: "tbvault-api"
-
     static_configs:
-
       - targets: ["host.docker.internal:3000"]
 
+  # Python chatbot (Phase 3): chatbot_* metrics from GET /metrics
+  - job_name: "tbvault-chatbot"
+    static_configs:
+      - targets: ["host.docker.internal:8000"]

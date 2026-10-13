@@ -1,5 +1,5 @@
 import { callChatbot, buildForm } from "../../services/chatbot/chatbot.service.js"
-import { parseChatInput, parseImageMessage, parseSearchQuery } from "./chatbot.validation.js"
+import { parseChatInput, parseImageMessage, parseSearchQuery, parseFeedbackInput } from "./chatbot.validation.js"
 
 /**
  * Sends the chatbot's answer back in our usual { message, data } shape.
@@ -70,5 +70,16 @@ export const imageSearch = async (req, res) => {
         return relay(res, await callChatbot("/search/image", { method: "POST", form }), "Search results")
     } catch (err) {
         return offline(res, "imageSearch", err)
+    }
+}
+
+// POST /chat/feedback   body: { request_id, rating: "up"|"down", intent?, comment? }
+export const sendChatFeedback = async (req, res) => {
+    const { data, error } = parseFeedbackInput(req.body)
+    if (error) return res.status(400).json({ message: error })
+    try {
+        return relay(res, await callChatbot("/chat/feedback", { method: "POST", json: data }), "Thanks for the feedback")
+    } catch (err) {
+        return offline(res, "sendChatFeedback", err)
     }
 }

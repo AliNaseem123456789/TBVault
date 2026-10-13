@@ -83,6 +83,17 @@ t("guests send no user token; the search state is passed along and checked", asy
     assert.equal((await api("POST", "/chat", { token: "forged.token.here", body: { message: "my orders" } })).status, 401)
 })
 
+t("feedback is validated and forwarded", async () => {
+    assert.equal((await api("POST", "/chat/feedback", { body: { request_id: "xyz", rating: "up" } })).status, 400)
+    assert.equal((await api("POST", "/chat/feedback", { body: { request_id: "abcdef0123456789", rating: "meh" } })).status, 400)
+    assert.equal((await api("POST", "/chat/feedback", { body: { request_id: "abcdef0123456789", rating: "up", comment: "x".repeat(501) } })).status, 400)
+    const ok = await api("POST", "/chat/feedback", { body: { request_id: "abcdef0123456789", rating: "down", intent: "product_search", comment: "wrong lamp" } })
+    assert.equal(ok.status, 200)
+    const sent = received.at(-1)
+    assert.equal(sent.path, "/chat/feedback")
+    assert.deepEqual(JSON.parse(sent.body), { request_id: "abcdef0123456789", rating: "down", intent: "product_search", comment: "wrong lamp" })
+})
+
 t("chatbot errors become clear 400 / 503 answers", async () => {
     const down = await api("POST", "/chat", { body: { message: "boom" } })
     assert.equal(down.status, 503)

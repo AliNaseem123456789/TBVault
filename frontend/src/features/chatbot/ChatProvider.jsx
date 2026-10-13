@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { sendChat, sendChatImage } from '../../api/chatbot.api';
+import { sendChat, sendChatImage, sendFeedback } from '../../api/chatbot.api';
 import { cancelOrder } from '../../api/orders.api';
 
 /**
@@ -52,8 +52,8 @@ export const ChatProvider = ({ children }) => {
     setSending(true);
     try {
       const res = await request();
-      const { answer, products = [], orders = [], sources = [], action = null, state = null } = res.data;
-      setMessages((list) => [...list, { id: newId(), role: 'assistant', content: answer, products, orders, sources, action, state }]);
+      const { answer, products = [], orders = [], sources = [], action = null, state = null, request_id: requestId, intent } = res.data;
+      setMessages((list) => [...list, { id: newId(), role: 'assistant', content: answer, products, orders, sources, action, state, requestId, intent }]);
     } catch (err) {
       setMessages((list) => [...list, { id: newId(), role: 'assistant', content: errorText(err), error: true }]);
     } finally {
@@ -111,11 +111,19 @@ export const ChatProvider = ({ children }) => {
     [ask]
   );
 
+  /** Thumbs up/down. Shown as given right away; a failed send is simply ignored. */
+  const rate = useCallback((messageId, rating) => {
+    const target = messages.find((m) => m.id === messageId);
+    if (!target?.requestId || target.feedback) return;
+    setMessages((list) => list.map((m) => (m.id === messageId ? { ...m, feedback: rating } : m)));
+    sendFeedback(target.requestId, rating, target.intent).catch(() => {});
+  }, [messages]);
+
   const reset = useCallback(() => setMessages([]), []);
 
   const value = useMemo(
-    () => ({ messages, sending, send, sendImage, resolveAction, reset, widgetOpen, setWidgetOpen }),
-    [messages, sending, send, sendImage, resolveAction, reset, widgetOpen]
+    () => ({ messages, sending, send, sendImage, resolveAction, rate, reset, widgetOpen, setWidgetOpen }),
+    [messages, sending, send, sendImage, resolveAction, rate, reset, widgetOpen]
   );
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 };

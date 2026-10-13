@@ -14,6 +14,9 @@ Command line tools. Run from the chatbot/ folder:
   python -m app.cli chat "do you have a gift for a coffee lover?"   (--token <access token> for order questions)
   python -m app.cli eval                       retrieval evaluation (see eval/eval_set.json), incl. reranking
   python -m app.cli eval-routing               intent classification evaluation (eval/routing_set.json)
+  python -m app.cli eval-answers [--token T]   answer quality graded by an LLM judge (eval/answer_set.json)
+  python -m app.cli eval-history               headline numbers of saved evaluation runs (trends)
+  python -m app.cli stats [--days 7]           real-traffic summary from data/logs: latency, CPU, tokens, cost, feedback
 """
 import argparse
 import json
@@ -68,7 +71,7 @@ def check():
     if chat.llm_enabled():
         from app import llm
         for model in (config.LLM_MODEL, config.FAST_LLM_MODEL):
-            step(f"Groq ({model})", lambda m=model: (llm.chat([{"role": "user", "content": "Reply with just: OK"}], model=m).content or "")[:40],
+            step(f"Groq ({model})", lambda m=model: (llm.chat([{"role": "user", "content": "Reply with just: OK"}], model=m, purpose="check").content or "")[:40],
                  "check GROQ_API_KEY, LLM_MODEL and FAST_LLM_MODEL in chatbot/.env")
     else:
         print("  --    Groq: GROQ_API_KEY not set, answers will use simple rules and templates")
@@ -112,6 +115,11 @@ def main():
     p = sub.add_parser("route")
     p.add_argument("message")
     sub.add_parser("eval-routing")
+    p = sub.add_parser("eval-answers")
+    p.add_argument("--token", help="a customer's access token, to include order questions")
+    sub.add_parser("eval-history")
+    p = sub.add_parser("stats")
+    p.add_argument("--days", type=int, default=7)
     p = sub.add_parser("reindex")
     p.add_argument("--no-images", action="store_true")
     p = sub.add_parser("sync")
@@ -154,6 +162,15 @@ def main():
     elif args.command == "eval-routing":
         from app import evaluate
         evaluate.run_routing()
+    elif args.command == "eval-answers":
+        from app import evaluate
+        evaluate.run_answers(token=args.token)
+    elif args.command == "eval-history":
+        from app import evaluate
+        evaluate.history()
+    elif args.command == "stats":
+        from app import stats
+        stats.print_summary(args.days)
     elif args.command == "sync":
         print(json.dumps(indexer.sync_products(args.product_ids), indent=2))
     elif args.command == "search":
@@ -177,6 +194,9 @@ def main():
         if result["action"]:
             print(f"  [button] {result['action']['label']}")
         print(f"  steps: {[(s['step'], s['ms']) for s in result['debug']['steps']]}")
+        used = result["debug"]["llm"]
+        print(f"  {result['debug']['total_ms']} ms, CPU {result['debug']['cpu_ms']} ms, {used['llm_calls']} LLM calls, "
+              f"{used['prompt_tokens'] + used['completion_tokens']} tokens, ${used['cost_usd']:.5f}")
     elif args.command == "eval":
         from app import evaluate
         evaluate.run(image_samples=args.images)

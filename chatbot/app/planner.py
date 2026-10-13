@@ -63,7 +63,7 @@ def make_plan(task: Task, message):
     if llm.enabled():
         try:
             details = json.dumps(task.model_dump(include={"search", "products", "goal", "filters"}))
-            return llm.ask_json(SYSTEM, f"REQUEST: {message}\nEXTRACTED: {details}", Plan), "llm"
+            return llm.ask_json(SYSTEM, f"REQUEST: {message}\nEXTRACTED: {details}", Plan, purpose="plan"), "llm"
         except llm.LLMError as err:
             log.warning("planner failed, using the simple plan: %s", err)
     return fallback_plan(task), "rules"

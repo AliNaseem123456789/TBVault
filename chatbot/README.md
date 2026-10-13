@@ -7,7 +7,8 @@ LLM that may only use what was retrieved or what a tool returned.
 - **Phase 1:** hybrid + photo retrieval (products).
 - **Phase 2:** intent routing, query rewriting, planning, reranking, policies (parent-child),
   order tools.
-- **Phase 3 (next):** observability and metrics.
+- **Phase 3:** metrics: latency, CPU, memory, tokens and cost, retrieval and answer
+  quality, feedback, a Grafana dashboard, offline evaluations.
 
 ```
 message ─► router ──┬─ greeting / small talk / out of scope ─► short reply (no search)
@@ -128,6 +129,11 @@ Change settings in `.env`, run again and compare. Add your own cases to `eval/*.
 | `app/policies.py` | **Parent-child retrieval**: search small chunks, answer from their whole section. |
 | `app/tools.py` | **Tool calling done safely**: allow-lists, validated arguments, the app executes, a confirmation for actions. |
 | `knowledge/*.md` | The policy texts (yours to edit). |
+| **Phase 3** | |
+| `app/metrics.py` | Every metric in one place: Prometheus counters/histograms, CPU and memory via psutil, token cost, the request log. |
+| `app/quality.py` | Cheap grounding checks on every answer. |
+| `app/evaluate.py` | Retrieval, routing and answer evaluations. Read the docstring for what each metric means. |
+| `app/stats.py` | Turning logs into numbers: percentiles, rates, cost per 1000 requests. |
 | `app/sync_worker.py` | Keeping the index in sync without cross-system transactions: events + retries + reindex. |
 | `app/evaluate.py` | Measuring retrieval quality (hit@k, MRR) instead of guessing. |
 
@@ -188,8 +194,81 @@ Change settings in `.env`, run again and compare. Add your own cases to `eval/*.
 - Photo search doesn't use routing (a photo is always a product search).
 - Indexing photos is the slow part: each one is downloaded and run through CLIP on your CPU.
 
-## Where Phase 3 plugs in
+## Phase 3: metrics
 
-The `Trace` in `chat.py` already times every step and records routing decisions, scores,
-rerank results and tool outcomes. Phase 3 can export these as metrics (Prometheus, which
-the backend already uses) and add dashboards, alerting and evaluation runs over time.
+Three ways to see how the chatbot is doing:
+
+**1. Live dashboard (Prometheus + Grafana).** The chatbot exposes `GET /metrics`. Your
+existing monitoring stack now scrapes it and opens a ready-made dashboard:
+
+```powershell
+cd backend
+docker compose -f docker-compose.monitoring.yml up -d
+# Grafana: http://localhost:3001 (admin / admin the first time) -> Dashboards -> TBVault -> TBVault chatbot
+```
+
+Prometheus runs in Docker and reaches your PC via `host.docker.internal`. If the chatbot target
+shows as DOWN on http://localhost:9090/targets, start uvicorn with
+`--host 0.0.0.0` (Node already listens on all interfaces).
+
+Dashboard sections:
+- **Overview:** requests, p95 latency, cost over the last 24 hours, zero-result rate, thumbs-up rate, memory.
+- **Traffic and speed:** requests per intent, latency per intent, time per stage, LLM vs rules routing, errors.
+- **CPU and memory:** process and machine CPU %, CPU seconds per request, memory.
+- **LLM:** tokens per minute by model and type, cost per hour by purpose, LLM latency, average tokens per request, failures.
+- **Quality:** results per answer, best scores, how often the reranker changed the #1 result, fallbacks, invented-price rate, order tool outcomes, feedback.
+
+**2. Request logs + `stats`** (no Docker needed). Every chat writes one JSON line to
+`data/logs/chat-YYYY-MM-DD.jsonl`, with emails and phone-like numbers redacted. The line
+holds the intent, routing, steps with timings, scores, tokens, cost, CPU and answer checks.
+
+```powershell
+python -m app.cli stats --days 7
+```
+
+That prints the request count, p50/p95 latency, CPU per request, tokens and US$ (in total,
+per 1000 requests and per purpose), zero-result rate, invented-price rate, citation rate, and
+thumbs up/down per intent.
+
+**3. Offline evaluations** use fixed test sets and are saved to `data/eval_reports/`:
+
+```powershell
+python -m app.cli eval            # retrieval: hit@5, MRR, nDCG@10, P@5, ms (dense / sparse / hybrid / +rerank)
+python -m app.cli eval-routing    # intent accuracy + rewriting, latency, tokens, cost
+python -m app.cli eval-answers    # answer quality, graded by an LLM judge (see below)
+python -m app.cli eval-history    # headline numbers of past runs, to see trends after changes
+```
+
+**Answer quality** is measured two ways:
+- **On every reply, cheaply (`quality.py`):** every price in the answer must appear in the
+  facts the LLM was given (an invented price is the worst shop hallucination). The check also
+  counts how many of the shown products the answer names.
+- **Offline, with an LLM judge (`eval-answers`):**
+  - *faithfulness*: are all claims supported by the facts?
+  - *relevance*: does it answer the question?
+  - Plus deterministic checks: required facts mentioned, correct intent, no invented prices,
+    and latency, tokens and cost per answer.
+
+  The judge is itself an LLM, so read its scores as a trend.
+
+**Customer feedback:** thumbs up/down under every reply goes to `POST /api/chat/feedback`,
+then to the `chatbot_feedback_total` metric and `data/logs/feedback-*.jsonl`, linked to the
+request log by `request_id`.
+
+**Cost:** tokens × price per million tokens. Defaults are Groq's launch prices ($0.15 / $0.75
+for gpt-oss-120b, $0.10 / $0.50 for 20b). Check console.groq.com and set `LLM_PRICES` in
+`.env` if they've changed.
+
+**CPU:** `chatbot_request_cpu_seconds` is the process CPU time used while a request ran. It's
+exact with one user at a time and approximate when requests overlap. LLM calls cost almost
+no CPU (they wait on Groq); embedding, reranking and photo encoding are the CPU work.
+
+| Metric (Prometheus) | Meaning |
+|---|---|
+| `chatbot_requests_total{intent,routed_by,status}` | requests |
+| `chatbot_request_seconds`, `chatbot_stage_seconds{stage}` | latency, whole request and per stage |
+| `chatbot_request_cpu_seconds`, `chatbot_process_cpu_percent`, `chatbot_process_memory_bytes` | CPU / memory |
+| `chatbot_llm_tokens_total{model,purpose,type}`, `chatbot_llm_cost_usd_total`, `chatbot_llm_seconds` | LLM usage |
+| `chatbot_results_returned`, `chatbot_zero_results_total`, `chatbot_top_score{kind}`, `chatbot_rerank_total` | retrieval |
+| `chatbot_fallbacks_total{kind}`, `chatbot_tool_calls_total`, `chatbot_llm_calls_total{status}` | reliability |
+| `chatbot_answer_checks_total{check,result}`, `chatbot_feedback_total{rating}` | answer quality |

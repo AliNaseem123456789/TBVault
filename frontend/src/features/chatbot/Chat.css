@@ -198,6 +198,17 @@
 .chat-action__keep { border: 1px solid var(--color-border-strong); background: var(--color-surface); color: var(--color-ink); }
 .chat-action__buttons button:disabled { opacity: 0.6; cursor: default; }
 
+/* thumbs up / down */
+.chat-feedback { display: flex; gap: var(--space-1); margin-top: -2px; }
+.chat-feedback button {
+  width: 28px; height: 28px; display: grid; place-items: center;
+  border: 0; border-radius: var(--radius-full); background: transparent;
+  color: var(--color-ink-faint); cursor: pointer;
+  transition: background var(--duration-fast), color var(--duration-fast);
+}
+.chat-feedback button:hover { background: var(--color-surface-alt); color: var(--color-ink); }
+.chat-feedback--done { margin: 0; font-size: var(--text-xs); color: var(--color-ink-faint); }
+
 /* typing dots */
 .chat-typing { display: inline-flex; gap: 5px; padding: var(--space-3) var(--space-4); }
 .chat-typing span {

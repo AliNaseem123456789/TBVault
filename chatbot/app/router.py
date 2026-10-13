@@ -148,7 +148,7 @@ def _llm_route(message, history, previous):
     user = (f"CATEGORIES: {categories}\n"
             f"PREVIOUS SEARCH: {json.dumps(previous) if previous else 'none'}\n"
             f"CONVERSATION:\n{turns or '(start)'}\n\nMESSAGE: {message}")
-    return llm.ask_json(SYSTEM, user, Route)
+    return llm.ask_json(SYSTEM, user, Route, purpose="route")
 
 
 def route(message, history=None, previous=None):

@@ -1,0 +1,25 @@
+{
+  "_about": "Questions for `python -m app.cli eval-answers`. must_mention: each item must appear in the answer ('a|b' = either). must_not_mention: must not appear. intent: expected route. requires_products: skipped unless these product names exist. needs_login: skipped unless --token is given. judge=false skips the LLM judge (e.g. small talk).",
+  "cases": [
+    {"question": "hi", "intent": "greeting", "must_not_mention": ["$"], "judge": false},
+    {"question": "what's the weather in Karachi?", "intent": "out_of_scope", "must_not_mention": ["$"], "judge": false},
+
+    {"question": "how long do card refunds take?", "intent": "policy_question", "must_mention": ["5", "10"]},
+    {"question": "do you offer cash on delivery?", "intent": "policy_question", "must_mention": ["cash on delivery|cod"]},
+    {"question": "can I cancel my order after it has shipped?", "intent": "policy_question", "must_mention": ["return|can't|cannot|no longer"]},
+    {"question": "do gift cards expire?", "intent": "policy_question", "must_mention": ["expir"]},
+    {"question": "how do I start selling on TBVault?", "intent": "policy_question", "must_mention": ["sell"]},
+    {"question": "is shipping charged per package when I buy from several sellers?", "intent": "policy_question", "must_mention": ["once|per order"]},
+
+    {"question": "wireless earbuds under $200", "intent": "product_search", "requires_products": ["Airpods", "Earphones"],
+     "must_mention": ["Airpods|Earphones|Beats"]},
+    {"question": "is the Rolex Submariner in stock?", "intent": "product_search", "requires_products": ["Submariner"],
+     "must_mention": ["Submariner"]},
+    {"question": "laptops under $1000", "intent": "product_search", "requires_products": ["Laptop", "MacBook", "Zenbook"]},
+    {"question": "a gift for someone who loves cooking", "intent": "product_search"},
+    {"question": "compare the iPhone 13 Pro and the Samsung Galaxy S10", "intent": "product_comparison",
+     "requires_products": ["iPhone 13 Pro", "Galaxy S10"], "must_mention": ["iPhone 13 Pro", "Galaxy S10"]},
+
+    {"question": "show my orders", "intent": "order_tracking", "needs_login": true}
+  ]
+}

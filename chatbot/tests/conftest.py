@@ -146,6 +146,7 @@ def fake_world(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "POLICY_BM25_FILE", tmp_path / "bm25_policies.json")
     monkeypatch.setattr(config, "GROQ_API_KEY", "")
     monkeypatch.setattr(config, "INTERNAL_KEY", "")
+    monkeypatch.setattr(config, "LOG_DIR", tmp_path / "logs")
     monkeypatch.setattr(config, "RERANK", False)          # tests that want reranking turn it on with a fake model
     monkeypatch.setattr(policies, "_bm25", None)
     policies._values_cache["at"] = 0
@@ -218,3 +219,10 @@ def shop(monkeypatch):
 @pytest.fixture
 def sql():
     return _sql
+
+
+@pytest.fixture(autouse=True)
+def _logs_to_tmp(monkeypatch, tmp_path_factory):
+    """No test writes into the real data/logs or data/eval_reports."""
+    monkeypatch.setattr(config, "LOG_DIR", tmp_path_factory.mktemp("logs"))
+    monkeypatch.setattr(config, "EVAL_REPORT_DIR", tmp_path_factory.mktemp("reports"))

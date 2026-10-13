@@ -72,3 +72,20 @@ export const parseSearchQuery = (q = {}) => {
     }
     return { data }
 }
+
+/** POST /chat/feedback body: { request_id, rating: "up"|"down", intent?, comment? } */
+export const parseFeedbackInput = (body = {}) => {
+    const requestId = typeof body.request_id === "string" ? body.request_id.trim() : ""
+    if (!/^[a-f0-9]{8,32}$/.test(requestId)) return { error: "request_id is invalid" }
+    if (!["up", "down"].includes(body.rating)) return { error: "rating must be up or down" }
+    const data = { request_id: requestId, rating: body.rating }
+    if (body.intent !== undefined) {
+        if (typeof body.intent !== "string" || !/^[a-z_]{1,40}$/.test(body.intent)) return { error: "intent is invalid" }
+        data.intent = body.intent
+    }
+    if (body.comment !== undefined && body.comment !== null && body.comment !== "") {
+        if (typeof body.comment !== "string" || body.comment.length > 500) return { error: "comment must be at most 500 characters" }
+        data.comment = body.comment.trim()
+    }
+    return { data }
+}

@@ -16,5 +16,9 @@ services:
     container_name: tbvault-grafana
     ports:
       - "3001:3000"
+    volumes:
+      # data source + the "TBVault chatbot" dashboard are set up automatically
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
       - prometheus

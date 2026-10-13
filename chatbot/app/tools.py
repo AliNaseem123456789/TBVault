@@ -25,7 +25,7 @@ import time
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
-from app import config, llm
+from app import config, llm, metrics
 
 log = logging.getLogger("tools")
 
@@ -173,6 +173,7 @@ def execute(name, raw_args, token, allowed):
         result = {"error": err.code, "message": str(err)}
         entry["outcome"] = err.code
     entry["ms"] = round((time.perf_counter() - started) * 1000)
+    metrics.TOOL_CALLS.labels(name if name in SCHEMAS else "unknown", entry["outcome"]).inc()
     log.info("tool %s", entry)
     return result, entry
 
@@ -224,10 +225,11 @@ def run(task, message, token, history=None, max_rounds=3):
     Returns {"answer", "tool_calls": [log entries], "orders": [...], "action": {...} | None}.
     """
     if not token:
-        return {"answer": MESSAGES["login_required"], "tool_calls": [], "orders": [], "action": None}
+        return {"answer": MESSAGES["login_required"], "tool_calls": [], "orders": [], "action": None, "results": []}
     if not llm.enabled():
         answer, entries, result, action = _fallback_answer(task, token)
-        return {"answer": answer, "tool_calls": entries, "orders": _orders_from([result]), "action": action}
+        return {"answer": answer, "tool_calls": entries, "orders": _orders_from([result]), "action": action,
+                "results": [result]}
 
     allowed = ALLOWED[task.intent]
     hint = f" (order number mentioned: {task.order_id})" if task.order_id else ""
@@ -238,11 +240,11 @@ def run(task, message, token, history=None, max_rounds=3):
     entries, results, action = [], [], None
     try:
         for _ in range(max_rounds):
-            reply = llm.chat(messages, tools=tool_specs(allowed))
+            reply = llm.chat(messages, tools=tool_specs(allowed), purpose="tools")
             calls = reply.tool_calls or []
             if not calls:
                 return {"answer": (reply.content or "").strip() or MESSAGES["unavailable"], "tool_calls": entries,
-                        "orders": _orders_from(results), "action": action}
+                        "orders": _orders_from(results), "action": action, "results": results}
             messages.append({"role": "assistant", "content": reply.content or "", "tool_calls": [
                 {"id": c.id, "type": "function", "function": {"name": c.function.name, "arguments": c.function.arguments}}
                 for c in calls]})
@@ -257,9 +259,9 @@ def run(task, message, token, history=None, max_rounds=3):
         log.warning("order tool loop failed, using rules: %s", err)
         answer, more, result, rule_action = _fallback_answer(task, token)
         return {"answer": answer, "tool_calls": entries + more, "orders": _orders_from(results + [result]),
-                "action": rule_action or action}
+                "action": rule_action or action, "results": results + [result]}
     return {"answer": "Sorry, I couldn't finish looking that up. Please check your Orders page.",
-            "tool_calls": entries, "orders": _orders_from(results), "action": action}
+            "tool_calls": entries, "orders": _orders_from(results), "action": action, "results": results}
 
 
 def _orders_from(results):

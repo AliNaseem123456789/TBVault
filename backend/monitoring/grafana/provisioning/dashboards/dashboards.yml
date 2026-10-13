@@ -1,0 +1,9 @@
+# Every dashboard JSON in monitoring/grafana/dashboards shows up in the "TBVault" folder.
+apiVersion: 1
+providers:
+  - name: tbvault
+    folder: TBVault
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

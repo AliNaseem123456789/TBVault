@@ -95,6 +95,18 @@ const ActionCard = ({ message }) => {
   );
 };
 
+/** Was this answer helpful? Feeds the thumbs-up/down metric (Phase 3). */
+const Feedback = ({ message }) => {
+  const { rate } = useChat();
+  if (message.feedback) return <p className="chat-feedback chat-feedback--done">Thanks for the feedback!</p>;
+  return (
+    <div className="chat-feedback" role="group" aria-label="Was this helpful?">
+      <button type="button" onClick={() => rate(message.id, 'up')} aria-label="Helpful" title="Helpful"><Icon name="thumbUp" size={15} /></button>
+      <button type="button" onClick={() => rate(message.id, 'down')} aria-label="Not helpful" title="Not helpful"><Icon name="thumbDown" size={15} /></button>
+    </div>
+  );
+};
+
 /** One bubble. Assistant replies can carry product cards, order links, policy sources and a confirm button. */
 const ChatMessage = ({ message, onOpenProduct }) => {
   const mine = message.role === 'user';
@@ -124,6 +136,7 @@ const ChatMessage = ({ message, onOpenProduct }) => {
           {message.products.map((p) => <ProductChip key={p.id} product={p} onOpen={onOpenProduct} />)}
         </div>
       )}
+      {!mine && message.requestId && !message.error && <Feedback message={message} />}
     </div>
   );
 };

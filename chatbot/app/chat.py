@@ -22,8 +22,10 @@ sends it back with the next message, so follow-ups like "only Sony" can be rewri
 import json
 import logging
 import time
+import uuid
+from datetime import datetime, timezone
 
-from app import config, llm, planner, policies, query_parser, retrieval, router, tools
+from app import config, llm, metrics, planner, policies, quality, query_parser, retrieval, router, tools
 from app.router import Task
 
 log = logging.getLogger("chat")
@@ -54,19 +56,55 @@ OUT_OF_SCOPE = ("I can only help with shopping on TBVault: finding and comparing
 
 
 class Trace:
-    """Collects what happened for the logs (and ?debug=true). No tokens or personal data."""
+    """
+    Everything measured about one request (Phase 3). It feeds:
+      - Prometheus: stage times, request time, CPU time, request counter
+      - the request log (data/logs/chat-*.jsonl) and ?debug=true responses
+    No tokens, emails or long numbers are recorded (see metrics.redact).
+    """
 
     def __init__(self):
+        self.request_id = uuid.uuid4().hex[:16]
         self.started = time.perf_counter()
+        self.cpu_started = time.process_time()
+        self.usage = metrics.start_request()   # llm.py adds tokens/cost of this request here
         self.steps = []
+        self.checks = []
+        self.results = 0
+        self.contexts = []   # the facts the LLM saw; returned with ?debug=true (for eval-answers), never logged
 
     def add(self, step, started, **info):
-        self.steps.append({"step": step, "ms": round((time.perf_counter() - started) * 1000), **info})
+        seconds = time.perf_counter() - started
+        metrics.STAGE_SECONDS.labels(step).observe(seconds)
+        self.steps.append({"step": step, "ms": round(seconds * 1000), **info})
 
-    def done(self, intent):
-        record = {"intent": intent, "total_ms": round((time.perf_counter() - self.started) * 1000), "steps": self.steps}
-        log.info("chat %s", json.dumps(record, default=str))
+    def done(self, intent, routed_by="rules", status="ok"):
+        seconds = time.perf_counter() - self.started
+        cpu = time.process_time() - self.cpu_started
+        metrics.REQUESTS.labels(intent, routed_by, status).inc()
+        metrics.REQUEST_SECONDS.labels(intent).observe(seconds)
+        metrics.REQUEST_CPU.labels(intent).observe(cpu)
+        usage = {k: (round(v, 6) if isinstance(v, float) else v) for k, v in self.usage.items()}
+        record = {"request_id": self.request_id, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                  "intent": intent, "routed_by": routed_by, "status": status, "total_ms": round(seconds * 1000),
+                  "cpu_ms": round(cpu * 1000), "results": self.results, "llm": usage, "checks": self.checks,
+                  "steps": self.steps}
+        text = metrics.redact(json.dumps(record, default=str))
+        log.info("chat %s", text)
+        metrics.write_log(json.loads(text))
         return record
+
+    def answered(self, intent, reply, context, products, llm_wrote):
+        """Bookkeeping after a handler has its reply: result counts, fallbacks, grounding checks."""
+        self.contexts.append(context)
+        if llm_wrote:
+            check = quality.check_answer(reply, context, products)
+            self.checks.append({"intent": intent, **check})
+            metrics.ANSWER_CHECKS.labels("prices_grounded", "fail" if check["unsupported_prices"] else "pass").inc()
+            if products:
+                metrics.ANSWER_CHECKS.labels("cites_products", "yes" if check["products_cited"] else "no").inc()
+        elif llm.enabled():
+            metrics.FALLBACKS.labels("answer_template").inc()
 
 
 # ----------------------------------------------------------------------------
@@ -117,7 +155,7 @@ def _write(rules, context, question, history=None):
             messages.append({"role": turn["role"], "content": str(turn["content"])[:1000]})
     messages.append({"role": "user", "content": f"{context}\n\nCUSTOMER: {question}"})
     try:
-        return (llm.chat(messages).content or "").strip() or None
+        return (llm.chat(messages, purpose="answer").content or "").strip() or None
     except llm.LLMError as err:
         log.warning("answer LLM failed, using a template: %s", err)
         return None
@@ -160,14 +198,30 @@ def handle_search(task, message, history, trace, limit):
     trace.add("search", started, query=query, applied=found["applied"], hits=len(found["debug"]),
               top_scores=found["debug"][:5], reranked=found.get("reranked"), rerank=found.get("rerank", [])[:5])
     products = found["products"]
+    _search_metrics("product_search", found)
+    trace.results += len(products)
     started = time.perf_counter()
     question = message if not task.goal else f"{message}\n(Goal: {task.goal})"
-    reply = _write(PRODUCT_RULES, build_context(products), question, history)
+    context = build_context(products)
+    reply = _write(PRODUCT_RULES, context, question, history)
     trace.add("answer", started, llm=reply is not None)
+    trace.answered("product_search", reply, context, products, reply is not None)
     if not reply:
         reply = (_product_list(products, "Here's what I found:") if products
                  else "I couldn't find a matching product. Try different words, or fewer filters.")
     return _result(reply, products=products, applied=found["applied"], search_query=query)
+
+
+def _search_metrics(intent, found):
+    metrics.RESULTS.labels(intent).observe(len(found["products"]))
+    if not found["products"]:
+        metrics.ZERO_RESULTS.labels(intent).inc()
+    if found["debug"]:
+        metrics.TOP_SCORE.labels("hybrid").observe(found["debug"][0]["score"])
+    if found.get("rerank"):
+        metrics.TOP_SCORE.labels("rerank").observe(found["rerank"][0]["score"])
+        changed = found.get("top_before_rerank") != found["rerank"][0]["product_id"]
+        metrics.RERANKS.labels("yes" if changed else "no").inc()
 
 
 def _find_one(name):
@@ -214,6 +268,11 @@ def handle_comparison(task, message, history, trace, limit):
     started = time.perf_counter()
     reply = _write(PRODUCT_RULES, context, f"{message}\n(Goal: {goal}. Compare only using the facts given.)", history)
     trace.add("answer", started, llm=reply is not None)
+    trace.results += len(products)
+    metrics.RESULTS.labels("product_comparison").observe(len(products))
+    if not products:
+        metrics.ZERO_RESULTS.labels("product_comparison").inc()
+    trace.answered("product_comparison", reply, context, products, reply is not None)
     if not reply:
         reply = _product_list(products, "Here are the products to compare:") if products else \
             "I couldn't find those products in the shop."
@@ -229,11 +288,20 @@ def handle_policy(task, message, history, trace):
         sections = policies.search(question)
     except Exception as err:     # policies not indexed yet / Pinecone down
         log.warning("policy search failed: %s", err)
+        metrics.FALLBACKS.labels("policy_unavailable").inc()
         sections = []
     trace.add("policy_search", started, query=question, sections=[(s["id"], s["score"]) for s in sections])
+    metrics.RESULTS.labels("policy_question").observe(len(sections))
+    if sections:
+        metrics.TOP_SCORE.labels("policy").observe(sections[0]["score"])
+    else:
+        metrics.ZERO_RESULTS.labels("policy_question").inc()
+    trace.results += len(sections)
     started = time.perf_counter()
-    reply = _write(POLICY_RULES, policy_context(sections), question, history)
+    context = policy_context(sections)
+    reply = _write(POLICY_RULES, context, question, history)
     trace.add("answer", started, llm=reply is not None)
+    trace.answered("policy_question", reply, context, [], reply is not None)
     if not reply:
         reply = (f"From our {sections[0]['title']} policy ({sections[0]['section']}):\n{sections[0]['text'][:700]}"
                  if sections else "I'm not sure about that one. Please check our help pages or contact support.")
@@ -245,6 +313,8 @@ def handle_orders(task, message, history, trace, user_token):
     started = time.perf_counter()
     out = tools.run(task, message, user_token, history)
     trace.add("order_tools", started, calls=out["tool_calls"], action=bool(out["action"]))
+    trace.results += len(out["orders"])
+    trace.contexts.append("TOOL RESULTS:\n" + json.dumps(out["results"], default=str)[:4000])
     return _result(out["answer"], orders=out["orders"], action=out["action"])
 
 
@@ -268,17 +338,23 @@ def answer(message, history=None, image_bytes=None, limit=None, state=None, user
     if image_bytes:
         return answer_photo(message, image_bytes, limit)
     trace = Trace()
+    route, how = None, "rules"
+    try:
+        started = time.perf_counter()
+        route, how = router.route(message, history, previous=state)
+        trace.add("route", started, by=how, intent=route.intent,
+                  tasks=[t.model_dump(exclude_defaults=True) for t in route.tasks])
+        if how == "rules" and llm.enabled() and route.intent != "greeting":
+            metrics.FALLBACKS.labels("router_rules").inc()   # the LLM router failed; keywords took over
 
-    started = time.perf_counter()
-    route, how = router.route(message, history, previous=state)
-    trace.add("route", started, by=how, intent=route.intent,
-              tasks=[t.model_dump(exclude_defaults=True) for t in route.tasks])
-
-    parts = []
-    for task in route.tasks:
-        # each task gets its own question text when there are several
-        question = message if len(route.tasks) == 1 else (task.query or message)
-        parts.append(handle(task, question, history, trace, limit, user_token))
+        parts = []
+        for task in route.tasks:
+            # each task gets its own question text when there are several
+            question = message if len(route.tasks) == 1 else (task.query or message)
+            parts.append(handle(task, question, history, trace, limit, user_token))
+    except Exception:
+        trace.done(route.intent if route else "unknown", how, status="error")
+        raise
 
     products, orders, sources, seen = [], [], [], set()
     for part in parts:
@@ -292,8 +368,10 @@ def answer(message, history=None, image_bytes=None, limit=None, state=None, user
     for task, part in zip(route.tasks, parts):
         if task.intent == "product_search":
             new_state = {"query": part.get("search_query"), "filters": task.filters.model_dump(exclude_defaults=True)}
-    record = trace.done(route.intent)
+    record = trace.done(route.intent, how)
+    record["contexts"] = trace.contexts
     return {
+        "request_id": trace.request_id,
         "answer": "\n\n".join(part["answer"] for part in parts),
         "intent": route.intent,
         "products": products[:limit * len(parts)],
@@ -310,18 +388,32 @@ def answer(message, history=None, image_bytes=None, limit=None, state=None, user
 def answer_photo(message, image_bytes, limit):
     """Photo search (Phase 1 flow): CLIP image search + optional price/stock words from the message."""
     trace = Trace()
-    started = time.perf_counter()
-    _, filters = query_parser.parse(message or "")
-    found = retrieval.search_by_image(image_bytes, filters, limit)
-    trace.add("photo_search", started, hits=len(found["debug"]), top_scores=found["debug"][:5])
-    products = found["products"]
-    context = "The customer uploaded a photo; these products looked most similar.\n" + build_context(products)
-    reply = _write(PRODUCT_RULES, context, message or "Find products that look like this photo.")
-    if not reply:
-        reply = (_product_list(products, "Here's what looks most like your photo:") if products
-                 else "I couldn't find anything that looks like that photo.")
-    record = trace.done("photo_search")
-    return {"answer": reply, "intent": "photo_search", "products": products, "orders": [], "sources": [],
+    try:
+        started = time.perf_counter()
+        _, filters = query_parser.parse(message or "")
+        found = retrieval.search_by_image(image_bytes, filters, limit)
+        trace.add("photo_search", started, hits=len(found["debug"]), top_scores=found["debug"][:5])
+        products = found["products"]
+        trace.results = len(products)
+        metrics.RESULTS.labels("photo_search").observe(len(products))
+        if found["debug"]:
+            metrics.TOP_SCORE.labels("image").observe(found["debug"][0]["score"])
+        if not products:
+            metrics.ZERO_RESULTS.labels("photo_search").inc()
+        context = "The customer uploaded a photo; these products looked most similar.\n" + build_context(products)
+        started = time.perf_counter()
+        reply = _write(PRODUCT_RULES, context, message or "Find products that look like this photo.")
+        trace.add("answer", started, llm=reply is not None)
+        trace.answered("photo_search", reply, context, products, reply is not None)
+        if not reply:
+            reply = (_product_list(products, "Here's what looks most like your photo:") if products
+                     else "I couldn't find anything that looks like that photo.")
+    except Exception:
+        trace.done("photo_search", "photo", status="error")
+        raise
+    record = trace.done("photo_search", "photo")
+    record["contexts"] = trace.contexts
+    return {"request_id": trace.request_id, "answer": reply, "intent": "photo_search", "products": products, "orders": [], "sources": [],
             "action": None, "applied": found["applied"], "state": None, "llm": llm.enabled(), "debug": record}
 
 

@@ -25,3 +25,7 @@ export const searchByImage = async ({ file, query }) => {
   if (query) form.append("query", query);
   return (await api.post("/search/image", form)).data;
 };
+
+// Thumbs up/down on one answer (request_id comes with every reply).
+export const sendFeedback = async (requestId, rating, intent) =>
+  (await api.post("/chat/feedback", { request_id: requestId, rating, ...(intent ? { intent } : {}) })).data;

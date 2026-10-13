@@ -107,6 +107,12 @@ SYNC_QUEUE = "chatbot.catalog-sync"
 SYNC_FAILED_QUEUE = "chatbot.catalog-sync.failed"
 SYNC_MAX_ATTEMPTS = 5
 
+# --- Metrics (Phase 3) ---------------------------------------------------------
+REQUEST_LOG = _str("REQUEST_LOG", "true").lower() in ("1", "true", "yes")   # one JSON line per chat
+LOG_DIR = CHATBOT_DIR / "data" / "logs"
+EVAL_REPORT_DIR = CHATBOT_DIR / "data" / "eval_reports"
+JUDGE_MODEL = _str("JUDGE_MODEL", "openai/gpt-oss-120b")                   # grades answers in eval-answers
+
 # --- API -------------------------------------------------------------------
 # When set, every request must send the same value in the X-Internal-Key header.
 # The Node backend does; browsers never talk to this service directly.

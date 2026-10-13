@@ -9,16 +9,20 @@ Browsers don't call this directly: the Node backend forwards /api/chat and
   POST /search/image               form-data: image=<file>  OR  query=<text describing a look>
   POST /chat                       JSON {message, history, state?}   header X-User-Token (optional)
   POST /chat/image                 form-data: image=<file>, message=<optional text>
+  POST /chat/feedback              JSON {request_id, rating: up|down, intent?, comment?}
+  GET  /metrics                    Prometheus metrics (Phase 3)
 
 Add ?debug=true to see retrieval scores (kept out of normal responses).
 """
 import logging
+from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi.concurrency import run_in_threadpool
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, Field
 
-from app import chat, config, retrieval
+from app import chat, config, metrics, retrieval
 from app.query_parser import Filters
 from app.router import SearchFilters
 
@@ -59,6 +63,31 @@ async def _read_image(image):
     if not data:
         raise HTTPException(status_code=400, detail="The image is empty")
     return data
+
+
+@app.get("/metrics")
+def prometheus_metrics():
+    """Prometheus scrapes this (see backend/monitoring/prometheus.yml). Keep port 8000 private."""
+    return Response(metrics.exposition(), media_type="text/plain; version=0.0.4")
+
+
+class Feedback(BaseModel, extra="forbid"):
+    request_id: str = Field(pattern=r"^[a-f0-9]{8,32}$")
+    rating: Literal["up", "down"]
+    intent: Literal["greeting", "general_conversation", "product_search", "product_comparison", "policy_question",
+                    "order_tracking", "order_cancellation", "out_of_scope", "clarification_needed",
+                    "multiple_intents", "photo_search", "unknown"] = "unknown"
+    comment: str | None = Field(default=None, max_length=500)
+
+
+@app.post("/chat/feedback", dependencies=[Depends(check_key)])
+def chat_feedback(body: Feedback):
+    """Thumbs up/down on one answer. Joined to the request log by request_id."""
+    metrics.FEEDBACK.labels(body.intent, body.rating).inc()
+    record = body.model_dump()
+    record["comment"] = metrics.redact(record["comment"])
+    metrics.write_log({"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), **record}, kind="feedback")
+    return {"ok": True}
 
 
 @app.get("/health")

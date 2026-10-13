@@ -23,7 +23,7 @@ Every function returns {"products": [...], "applied": {...}, "debug": [...]}.
 import logging
 import re
 
-from app import bm25, catalog, config, embeddings, reranker, vector_store
+from app import bm25, catalog, config, embeddings, metrics, reranker, vector_store
 from app.query_parser import Filters
 from app.text_builder import product_document
 
@@ -93,6 +93,7 @@ def _rerank_rows(query, rows, exact_match):
         ordered, scores = reranker.rerank(query, candidates, product_document)
     except Exception as err:   # model missing/broken: keep the hybrid order rather than fail the search
         log.warning("reranking skipped: %s", err)
+        metrics.FALLBACKS.labels("rerank_error").inc()
         return rows, None
     return ordered, scores
 
@@ -124,6 +125,7 @@ def _search_with_guesses(run, filters, ratio=None):
     if best >= loose_best * GUESS_KEEP_RATIO:
         return matches, filters
     log.info("guessed filters %s made results worse; ignoring them", filters.guessed)
+    metrics.FALLBACKS.labels("guessed_filter_ignored").inc()
     return loose_matches, loose
 
 
@@ -152,10 +154,12 @@ def search_products(query, filters=None, limit=None, alpha=None, rerank=True):
 
     # 7. (Phase 2) rerank the top candidates with the cross-encoder
     scores = None
+    top_before = rows[0]["id"] if rows else None
     if rerank:
         rows, scores = _rerank_rows(query, rows, exact_match=bool(exact_ids))
     products = [catalog.to_public(row) for row in rows[:limit]]
-    result = {"products": products, "applied": filters.describe(), "debug": debug, "reranked": scores is not None}
+    result = {"products": products, "applied": filters.describe(), "debug": debug, "reranked": scores is not None,
+              "top_before_rerank": top_before}
     if scores is not None:
         result["rerank"] = [{"product_id": row["id"], "score": s} for row, s in zip(rows, scores)]
     return result

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { optionalAuthenticate } from "../../middleware/auth.middleware.js";
 import { rateLimit } from "../../middleware/rateLimiter.middleware.js";
 import upload, { handleUpload } from "../../middleware/upload.middleware.js";
-import { sendChatMessage, sendChatImage, smartSearch, imageSearch } from "./chatbot.controller.js";
+import { sendChatMessage, sendChatImage, smartSearch, imageSearch, sendChatFeedback } from "./chatbot.controller.js";
 
 const router = Router()
 
@@ -13,6 +13,7 @@ const chatLimit = rateLimit({ name: "chatbot", max: 20, windowSec: 60, keyFn: pe
 const searchLimit = rateLimit({ name: "smart-search", max: 60, windowSec: 60, keyFn: perVisitor })
 
 router.post("/chat", optionalAuthenticate, chatLimit, sendChatMessage)
+router.post("/chat/feedback", optionalAuthenticate, searchLimit, sendChatFeedback)
 router.post("/chat/image", optionalAuthenticate, chatLimit, handleUpload(upload.single("image")), sendChatImage)
 router.get("/search/smart", optionalAuthenticate, searchLimit, smartSearch)
 router.post("/search/image", optionalAuthenticate, searchLimit, handleUpload(upload.single("image")), imageSearch)

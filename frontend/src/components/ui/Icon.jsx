@@ -33,6 +33,8 @@ const paths = {
   send: 'M4 12l16-8-6 16-2.5-6.5L4 12z M11.5 13.5L20 4',
   expand: 'M14 4h6v6 M20 4l-7 7 M10 20H4v-6 M4 20l7-7',
   camera: 'M4 8h3l2-3h6l2 3h3v11H4V8z M12 16.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z',
+  thumbUp: 'M7 11v9H4v-9h3z M7 11l4-7c1.5 0 2.5 1 2.2 2.6L12.6 10H18a2 2 0 012 2.3l-1.2 6A2 2 0 0116.8 20H7',
+  thumbDown: 'M17 13V4h3v9h-3z M17 13l-4 7c-1.5 0-2.5-1-2.2-2.6l.6-3.4H6a2 2 0 01-2-2.3l1.2-6A2 2 0 017.2 4H17',
 };
 
 const Icon = ({ name, size = 20, strokeWidth = 1.8, className = '' }) => {

@@ -284,4 +284,4 @@ def test_evaluation_runs(fake_world, shop, monkeypatch, tmp_path, capsys):
     evaluate.run(image_samples=50)
     out = capsys.readouterr().out
     assert "skip  'nothing'" in out
-    assert "hybrid   hit@5 1.00   MRR 1.00" in out
+    assert "hybrid   hit@5 1.00  MRR 1.00  nDCG@10 1.00" in out
