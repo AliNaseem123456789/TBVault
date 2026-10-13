@@ -11,11 +11,16 @@
 #   - an SSH key pair in ~/.ssh/tbvault-oracle.key (download it to your PC afterwards)
 #   - an Ubuntu 22.04 ARM server: VM.Standard.A1.Flex, 4 CPUs, 24 GB RAM (the whole free allowance)
 # At the end it prints the server's public IP.
+#
+# Free ARM servers are often "out of capacity". To keep retrying every 5 minutes until one
+# is free (keep the Cloud Shell tab open):  bash create-server.sh --keep-trying
 set -euo pipefail
 
 NAME=tbvault-chatbot
 SHAPE=VM.Standard.A1.Flex
 KEY=~/.ssh/tbvault-oracle.key
+KEEP_TRYING=false
+[[ "${1:-}" == "--keep-trying" ]] && KEEP_TRYING=true
 
 say() { echo -e "\n==> $*"; }
 # Prints the value, or nothing when the query found nothing.
@@ -79,7 +84,9 @@ fi
 
 # ---------------------------------------------------------------- server
 say "Server"
-ID=$(value oci compute instance list -c "$C" --display-name "$NAME" --lifecycle-state RUNNING --query 'data[0].id' --raw-output)
+# A server from an earlier run counts in any state except deleted, so we never make two.
+ID=$(value oci compute instance list -c "$C" --display-name "$NAME" \
+    --query "data[?\"lifecycle-state\" != 'TERMINATED' && \"lifecycle-state\" != 'TERMINATING'] | [0].id" --raw-output)
 
 if [[ -z "$ID" ]]; then
     # Newest Ubuntu 22.04 build that runs on ARM (the --shape filter picks the aarch64 build).
@@ -100,35 +107,44 @@ EOF
 
     ADS=$(oci iam availability-domain list -c "$C" --query "join(' ', data[].name)" --raw-output)
 
-    # Free ARM servers are popular, so a zone can be "out of capacity". Try every zone,
-    # first with the full 4 CPU / 24 GB, then with 2 CPU / 12 GB.
-    for SIZE in '{"ocpus":4,"memoryInGBs":24}' '{"ocpus":2,"memoryInGBs":12}'; do
-        for AD in $ADS; do
-            echo "trying $AD with $SIZE ..."
-            if OUT=$(oci compute instance launch -c "$C" --availability-domain "$AD" --display-name "$NAME" \
-                    --shape "$SHAPE" --shape-config "$SIZE" --image-id "$IMAGE" --subnet-id "$SUBNET" \
-                    --assign-public-ip true --ssh-authorized-keys-file "$KEY.pub" --user-data-file "$CLOUD_INIT" \
-                    --wait-for-state RUNNING --max-wait-seconds 900 --query 'data.id' --raw-output 2>&1); then
-                ID=$(echo "$OUT" | grep -o 'ocid1\.instance[^" ]*' | head -1)
-                break 2
-            fi
-            if echo "$OUT" | grep -qi "capacity"; then
-                echo "  out of capacity there"
-            else
-                echo "$OUT" >&2
-                exit 1
-            fi
+    # Free ARM servers are popular, so a zone can be "out of capacity". Try every zone with
+    # 4 CPU / 24 GB, then 2 CPU / 12 GB, then 1 CPU / 6 GB (enough for the chatbot).
+    try_launch() {
+        for SIZE in '{"ocpus":4,"memoryInGBs":24}' '{"ocpus":2,"memoryInGBs":12}' '{"ocpus":1,"memoryInGBs":6}'; do
+            for AD in $ADS; do
+                echo "$(date +%H:%M) trying $AD with $SIZE ..."
+                if OUT=$(oci compute instance launch -c "$C" --availability-domain "$AD" --display-name "$NAME" \
+                        --shape "$SHAPE" --shape-config "$SIZE" --image-id "$IMAGE" --subnet-id "$SUBNET" \
+                        --assign-public-ip true --ssh-authorized-keys-file "$KEY.pub" --user-data-file "$CLOUD_INIT" \
+                        --wait-for-state RUNNING --max-wait-seconds 900 --query 'data.id' --raw-output 2>&1); then
+                    ID=$(echo "$OUT" | grep -o 'ocid1\.instance[^" ]*' | head -1)
+                    return 0
+                fi
+                if echo "$OUT" | grep -qi "capacity"; then
+                    echo "  out of capacity there"
+                else
+                    echo "$OUT" >&2
+                    exit 1
+                fi
+            done
         done
+        return 1
+    }
+
+    until try_launch; do
+        if ! $KEEP_TRYING; then break; fi
+        echo "  no luck; trying again in 5 minutes (Ctrl+C to stop)"
+        sleep 300
     done
     rm -f "$CLOUD_INIT"
 
     if [[ -z "$ID" ]]; then
-        echo -e "\nOracle has no free ARM capacity right now. Wait an hour or so and run: bash create-server.sh"
+        echo -e "\nOracle has no free ARM capacity right now. To keep retrying automatically, run:  bash create-server.sh --keep-trying"
         exit 1
     fi
     echo "server created"
 else
-    echo "reusing the running server"
+    echo "reusing the server from an earlier run (state: $(oci compute instance get --instance-id "$ID" --query 'data."lifecycle-state"' --raw-output))"
 fi
 
 IP=$(oci compute instance list-vnics --instance-id "$ID" --query 'data[0]."public-ip"' --raw-output)
