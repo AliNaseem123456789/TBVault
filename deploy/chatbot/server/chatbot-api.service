@@ -1,0 +1,17 @@
+[Unit]
+Description=TBVault chatbot API (FastAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=chatbot
+WorkingDirectory=/srv/chatbot/current/chatbot
+Environment=PYTHONUNBUFFERED=1
+# One worker: the models are loaded once and shared by all requests.
+ExecStart=/srv/chatbot/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers
+Restart=always
+RestartSec=3
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=TBVault chatbot index sync (RabbitMQ -> Pinecone)
+After=network-online.target chatbot-api.service
+Wants=network-online.target
+
+[Service]
+User=chatbot
+WorkingDirectory=/srv/chatbot/current/chatbot
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/srv/chatbot/venv/bin/python -m app.sync_worker
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,167 @@
+# Deploys the committed chatbot code (HEAD) to the chatbot's EC2 server. Run from your PC for every release:
+#   powershell -ExecutionPolicy Bypass -File deploy\chatbot\deploy.ps1 -Domain tbvault-chat.duckdns.org
+#
+# What it does:
+#   1. First time only: writes chatbot/.env.production (git-ignored) from chatbot/.env plus the
+#      database / photo / RabbitMQ settings in backend/.env.production, makes a shared secret key,
+#      and points the TBVault backend at the chatbot (CHATBOT_URL + CHATBOT_INTERNAL_KEY in
+#      backend/.env.production). Then it stops so you can check both files.
+#   2. Packs chatbot/ from git HEAD and uploads it with the .env, the RDS certificate and the
+#      BM25 word statistics (chatbot/data/bm25_*.json, made by `python -m app.cli reindex`).
+#   3. Runs deploy/chatbot/server/release.sh on the server: installs Python packages, downloads the
+#      models (first time ~700 MB), checks every connection, restarts the API + sync worker, and
+#      puts the previous version back if the new one doesn't start.
+# The first deploy also sets the server up (Python, Nginx, swap). -Setup re-runs that.
+
+param(
+    [string]$Server = "",
+    [string]$Domain = "",
+    [string]$KeyFile = (Join-Path $HOME ".ssh\tbvault-chatbot-key.pem"),
+    [switch]$Setup
+)
+
+$ErrorActionPreference = "Stop"
+$root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+$chatbotEnv = Join-Path $root "chatbot\.env"
+$prodEnv = Join-Path $root "chatbot\.env.production"
+$backendProdEnv = Join-Path $root "backend\.env.production"
+$backendEnv = Join-Path $root "backend\.env"
+$certFile = Join-Path $root "backend\certs\rds-global-bundle.pem"
+$tmp = Join-Path $env:TEMP "tbvault-chatbot-release"
+$serverCertPath = "/srv/chatbot/shared/certs/rds-global-bundle.pem"
+
+function Check([string]$what) { if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" } }
+
+function Read-EnvFile([string]$path) {
+    $map = [ordered]@{}
+    if (Test-Path $path) {
+        foreach ($line in Get-Content $path) {
+            if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') { $map[$Matches[1]] = $Matches[2] }
+        }
+    }
+    return $map
+}
+
+# Changes one KEY=value line in a .env file (or adds it), leaving every other line alone.
+function Set-EnvValue([string]$path, [string]$key, [string]$value) {
+    $lines = [Collections.Generic.List[string]]@()
+    if (Test-Path $path) { $lines.AddRange([string[]](Get-Content $path)) }
+    $found = $false
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match "^\s*$key=") { $lines[$i] = "$key=$value"; $found = $true }
+    }
+    if (-not $found) { $lines.Add("$key=$value") }
+    [IO.File]::WriteAllLines($path, [string[]]$lines, (New-Object Text.UTF8Encoding $false))
+}
+
+function New-Secret {
+    $bytes = New-Object byte[] 32
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    return -join ($bytes | ForEach-Object { $_.ToString("x2") })
+}
+
+if (-not $Server) {
+    $ipFile = Join-Path $PSScriptRoot ".server-ip"
+    if (-not (Test-Path $ipFile)) { throw "No -Server given and deploy/chatbot/.server-ip not found. Run deploy\chatbot\create-server.ps1 first." }
+    $Server = (Get-Content $ipFile -Raw).Trim()
+}
+if (-not (Test-Path $KeyFile)) { throw "SSH key not found: $KeyFile" }
+$sshArgs = @("-i", $KeyFile, "-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15")
+$target = "ubuntu@$Server"
+
+# 1. Server .env (first time) --------------------------------------------------------------
+if (-not (Test-Path $prodEnv)) {
+    if (-not $Domain) { throw "First deploy: pass -Domain (the chatbot's domain, e.g. -Domain tbvault-chat.duckdns.org)." }
+    if (-not (Test-Path $chatbotEnv)) { throw "chatbot/.env not found" }
+    # The live site's settings are the right source for the database, photos and RabbitMQ.
+    $site = Read-EnvFile $backendProdEnv
+    if ($site.Count -eq 0) {
+        Write-Host "backend/.env.production not found; using backend/.env instead." -ForegroundColor Yellow
+        $site = Read-EnvFile $backendEnv
+    }
+
+    $envMap = [ordered]@{}
+    foreach ($k in @("DATABASE_URL", "DB_SSL_CA_FILE", "S3_BUCKET", "S3_REGION", "RABBITMQ_URL")) {
+        if ($site.Contains($k)) { $envMap[$k] = $site[$k] }
+    }
+    $own = Read-EnvFile $chatbotEnv
+    foreach ($k in $own.Keys) { $envMap[$k] = $own[$k] }   # chatbot/.env wins
+
+    if ($envMap["DB_SSL_CA_FILE"]) { $envMap["DB_SSL_CA_FILE"] = $serverCertPath }
+    $siteUrl = if ($site["FRONTEND_URL"]) { $site["FRONTEND_URL"].TrimEnd("/") } else { "https://YOUR-SHOP-DOMAIN" }
+    $envMap["NODE_API_URL"] = "$siteUrl/api"
+    if (-not $envMap["CHATBOT_INTERNAL_KEY"]) { $envMap["CHATBOT_INTERNAL_KEY"] = New-Secret }
+    # The server reads photos with its IAM role; local-only settings stay behind.
+    foreach ($k in @("S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_ENDPOINT", "TEST_DATABASE_URL")) { $envMap.Remove($k) }
+
+    $lines = @("# Chatbot server environment (generated by deploy/chatbot/deploy.ps1). Git-ignored.") +
+             ($envMap.Keys | ForEach-Object { "$_=$($envMap[$_])" })
+    [IO.File]::WriteAllLines($prodEnv, [string[]]$lines, (New-Object Text.UTF8Encoding $false))
+    Write-Host "Wrote chatbot/.env.production." -ForegroundColor Yellow
+
+    if (Test-Path $backendProdEnv) {
+        Set-EnvValue $backendProdEnv "CHATBOT_URL" "https://$Domain"
+        Set-EnvValue $backendProdEnv "CHATBOT_INTERNAL_KEY" $envMap["CHATBOT_INTERNAL_KEY"]
+        Write-Host "Set CHATBOT_URL and CHATBOT_INTERNAL_KEY in backend/.env.production." -ForegroundColor Yellow
+    } else {
+        Write-Host "backend/.env.production not found: set CHATBOT_URL=https://$Domain and the same CHATBOT_INTERNAL_KEY on the TBVault server yourself." -ForegroundColor Yellow
+    }
+
+    Write-Host "Check chatbot/.env.production before deploying:"
+    Write-Host "  - DATABASE_URL should point at RDS (...rds.amazonaws.com...)"
+    Write-Host "  - NODE_API_URL should be your shop's address + /api (now: $($envMap["NODE_API_URL"]))"
+    Write-Host "  - PINECONE_API_KEY and GROQ_API_KEY are set"
+    if ("$($envMap["RABBITMQ_URL"])" -match "127\.0\.0\.1|localhost" -or -not $envMap["RABBITMQ_URL"]) {
+        Write-Host "  - RABBITMQ_URL is a local broker the chatbot server can't reach: put your CloudAMQP amqps:// URL there," -ForegroundColor Yellow
+        Write-Host "    or the sync worker stays off (the index then only updates when you run reindex)." -ForegroundColor Yellow
+    }
+    Write-Host "Then run this script again, and redeploy the shop (deploy\deploy.ps1) so the backend uses the chatbot."
+    exit 0
+}
+
+$prodMap = Read-EnvFile $prodEnv
+if (-not $prodMap["PINECONE_API_KEY"]) { throw "PINECONE_API_KEY is empty in chatbot/.env.production" }
+if ($prodMap["DB_SSL_CA_FILE"] -and -not (Test-Path $certFile)) { throw "backend/certs/rds-global-bundle.pem is missing (setup-rds.ps1 downloads it)" }
+
+$dirty = git -C $root status --porcelain chatbot
+if ($dirty) { Write-Host "Note: chatbot/ has uncommitted changes. Only committed code (HEAD) is deployed." -ForegroundColor Yellow }
+$commit = git -C $root rev-parse --short HEAD
+Write-Host "Deploying chatbot $commit to $Server" -ForegroundColor Cyan
+
+# 2. Package ------------------------------------------------------------------------------------
+if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
+New-Item -ItemType Directory -Path $tmp | Out-Null
+git -C $root archive --format=tar.gz -o (Join-Path $tmp "chatbot.tgz") HEAD chatbot; Check "git archive"
+Copy-Item $prodEnv (Join-Path $tmp "env")
+if (Test-Path $certFile) { Copy-Item $certFile (Join-Path $tmp "rds-global-bundle.pem") }
+# BM25 word statistics: search needs the same ones that built the Pinecone index.
+foreach ($name in @("bm25_params.json", "bm25_policies.json")) {
+    $file = Join-Path $root "chatbot\data\$name"
+    if (Test-Path $file) { Copy-Item $file (Join-Path $tmp $name) }
+}
+# Server scripts must have Linux line endings.
+Get-ChildItem (Join-Path $PSScriptRoot "server") -File | ForEach-Object {
+    $text = [IO.File]::ReadAllText($_.FullName) -replace "`r`n", "`n"
+    [IO.File]::WriteAllText((Join-Path $tmp $_.Name), $text, (New-Object Text.UTF8Encoding $false))
+}
+
+# 3. Upload and run -------------------------------------------------------------------------------
+Write-Host "Uploading..."
+ssh @sshArgs $target "rm -rf /tmp/chatbot-release && mkdir -p /tmp/chatbot-release"; Check "ssh"
+scp @sshArgs -q (Get-ChildItem $tmp | ForEach-Object { $_.FullName }) "${target}:/tmp/chatbot-release/"; Check "scp"
+Remove-Item -Recurse -Force $tmp
+
+$force = if ($Setup) { "FORCE_SETUP=1 " } else { "" }
+ssh @sshArgs $target "sudo ${force}bash /tmp/chatbot-release/release.sh"; Check "release on server"
+
+$backendMap = Read-EnvFile $backendProdEnv
+$url = if ($backendMap["CHATBOT_URL"]) { $backendMap["CHATBOT_URL"] } else { "http://$Server" }
+Write-Host ""
+Write-Host "Deployed chatbot $commit." -ForegroundColor Green
+Write-Host "  Health: $url/health   (http://$Server/health works too)"
+Write-Host "  Logs:   ssh -i $KeyFile $target 'journalctl -u chatbot-api -f'"
+if ($url -like "https://*") {
+    $domainOnly = $url -replace "^https://", ""
+    Write-Host "  HTTPS (once, after the domain points at $Server):"
+    Write-Host "    ssh -i $KeyFile $target `"sudo bash /srv/chatbot/enable-https.sh $domainOnly you@email.com`""
+}

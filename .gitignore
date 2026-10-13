@@ -1,3 +1,5 @@
 data-commands/
 # Server IP written by deploy/create-server.ps1
 deploy/.server-ip
+# Chatbot server IP written by deploy/chatbot/create-server.ps1
+deploy/chatbot/.server-ip
