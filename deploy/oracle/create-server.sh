@@ -71,7 +71,7 @@ fi
 say "SSH key"
 if [[ ! -f "$KEY" ]]; then
     mkdir -p ~/.ssh
-    ssh-keygen -t ed25519 -N "" -C tbvault-oracle -f "$KEY" >/dev/null
+    ssh-keygen -t rsa -b 4096 -N "" -C tbvault-oracle -f "$KEY" >/dev/null
     echo "created $KEY"
 else
     echo "reusing $KEY"
