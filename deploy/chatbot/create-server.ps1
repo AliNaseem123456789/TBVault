@@ -45,11 +45,21 @@ New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 function Run-Aws([string]$prof, [string]$region, [object[]]$cmd, [bool]$mustWork) {
     $old = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    $out = & aws @cmd --region $region --profile $prof 2>$null
+    # Keep AWS's own error text (stderr) apart from the normal output.
+    $all = & aws @cmd --region $region --profile $prof 2>&1
     $code = $LASTEXITCODE
     $ErrorActionPreference = $old
+    $out = @($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] })
+    if ($out.Count -eq 0) { $out = $null } elseif ($out.Count -eq 1) { $out = $out[0] }
     if ($code -ne 0) {
-        if ($mustWork) { throw "aws $($cmd -join ' ') (profile $prof) failed (exit $code). Run it by hand to see the error." }
+        if ($mustWork) {
+            $why = (($all | Where-Object { $_ -is [Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join " ").Trim()
+            $hint = ""
+            if ($why -match "AccessDenied|not authorized|UnauthorizedOperation") {
+                $hint = "`nThe AWS user behind profile '$prof' lacks this permission. Give it AdministratorAccess in that account (IAM > Users > Add permissions) and run this script again."
+            }
+            throw "aws $($cmd[0..1] -join ' ') (profile $prof) failed: $why$hint"
+        }
         return $null
     }
     if ($null -eq $out) { return "" }   # some commands print nothing when they succeed
