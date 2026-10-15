@@ -35,8 +35,15 @@ src/
     Landing/
       Landing.jsx        Composes the page from sections/
       Landing.css         Page-specific layout only
-      sections/           One component per section (Hero, Categories, ...)
-                           plus placeholderData.js for mock content
+      sections/           One component per section (Hero, Categories, ProductTabs,
+                           PromoBanners, WhyTBVault, ...), all on real API data
+      useProductList.js   Loads one product list (best sellers, new arrivals...)
+    Info/                 Footer text pages (About, Help center, Contact, legal...)
+      InfoPage.jsx        Shared shell: heading band + side menu + .prose text
+    Collection/           New arrivals / Best sellers lists with "Load more"
+
+  content/
+    company.js           Company details (demo placeholders) for footer pages
 
   styles/
     tokens.css           Design tokens — see STYLE_GUIDE.md
@@ -110,10 +117,8 @@ Example: adding a `/shop` page.
 
 ## 4. Wiring up real data
 
-Placeholder content (e.g. `src/pages/Landing/sections/placeholderData.js`)
-stands in for a backend that doesn't have those endpoints yet. When a real
-endpoint exists, follow the existing `auth` pattern instead of fetching
-ad-hoc:
+Every homepage section now uses real endpoints. When you need data from a
+new endpoint, follow the existing `auth` pattern instead of fetching ad-hoc:
 
 1. Add a file in `src/api/`, e.g. `products.api.js`, that uses the shared
    `apiClient` from `src/api/apiClient.js` — mirror the shape of

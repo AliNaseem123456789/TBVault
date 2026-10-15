@@ -54,3 +54,4 @@ export const sendOrderRefundedEmail = (to, order) => sendEmail("orderRefunded", 
 export const sendReturnUpdateEmail = (to, order) => sendEmail("returnUpdate", to, order);
 export const sendLowStockEmail = (to, data) => sendEmail("lowStock", to, data);
 export const sendBackInStockEmail = (to, data) => sendEmail("backInStock", to, data);
+export const sendContactMessageEmail = (to, data) => sendEmail("contactMessage", to, data);

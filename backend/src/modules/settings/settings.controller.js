@@ -7,13 +7,22 @@ import { isCardPaymentEnabled } from "../../config/stripe.js"
 export const getStoreConfig = async (req, res) => {
     try {
         const settings = await getPublicSettings()
-        const defaultZone = await prisma.shippingZone.findFirst({ where: { is_default: true } })
+        const zones = await prisma.shippingZone.findMany({ orderBy: [{ is_default: "asc" }, { name: "asc" }] })
+        const defaultZone = zones.find((z) => z.is_default)
         return res.status(200).json({
             message: "Store config",
             data: {
                 ...settings,
                 card_payments_enabled: isCardPaymentEnabled(),
                 free_shipping_over: defaultZone?.free_over ?? null,
+                // For the Shipping & returns page (the same rates checkout charges).
+                shipping_zones: zones.map((z) => ({
+                    name: z.name,
+                    regions: z.regions,
+                    rate: Number(z.rate).toFixed(2),
+                    free_over: z.free_over === null ? null : Number(z.free_over).toFixed(2),
+                    is_default: z.is_default,
+                })),
             },
         })
     } catch (err) {

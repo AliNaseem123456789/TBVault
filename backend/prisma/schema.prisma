@@ -784,3 +784,28 @@ model GiftCard {
 
   @@map("gift_cards")
 }
+
+// ==============================
+// SITE: newsletter sign-ups and contact form messages
+// ==============================
+model NewsletterSubscriber {
+  id         Int      @id @default(autoincrement())
+  email      String   @unique @db.VarChar(255)
+  created_at DateTime @default(now())
+
+  @@map("newsletter_subscribers")
+}
+
+model ContactMessage {
+  id         Int      @id @default(autoincrement())
+  name       String   @db.VarChar(100)
+  email      String   @db.VarChar(255)
+  topic      String   @db.VarChar(40)
+  order_ref  String?  @db.VarChar(40)
+  message    String
+  user_id    Int?
+  created_at DateTime @default(now())
+
+  @@index([created_at])
+  @@map("contact_messages")
+}

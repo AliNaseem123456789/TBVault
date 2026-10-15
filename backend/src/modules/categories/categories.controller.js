@@ -39,12 +39,27 @@ export const getCategoriesById = async (req, res) => {
     }
 }
 
+// GET /categories
+// Each category carries `image_key`: the main photo of its newest public product that has one
+// (null when none does), so the storefront can show category tiles without separate uploads.
 export const getCategories = async (req, res) => {
     try {
-        const categories = await prisma.category.findMany({
+        const rows = await prisma.category.findMany({
             orderBy: { name: "asc" },
-            include: { _count: { select: { products: { where: PUBLIC_PRODUCT_WHERE } } } },
+            include: {
+                _count: { select: { products: { where: PUBLIC_PRODUCT_WHERE } } },
+                products: {
+                    where: { ...PUBLIC_PRODUCT_WHERE, images: { some: {} } },
+                    orderBy: { created_at: "desc" },
+                    take: 1,
+                    select: { images: { orderBy: [{ is_primary: "desc" }, { created_at: "asc" }], take: 1, select: { key: true } } },
+                },
+            },
         })
+        const categories = rows.map(({ products, ...category }) => ({
+            ...category,
+            image_key: products[0]?.images[0]?.key ?? null,
+        }))
         return res.status(200).json({ message: "Category fetched", data: categories })
     } catch (err) {
         console.error("getCategories error:", err)

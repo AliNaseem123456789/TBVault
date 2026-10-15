@@ -12,10 +12,11 @@
   justify-content: flex-end;
   padding: var(--space-4);
 }
-.product-card__art--1 { background: linear-gradient(155deg, #FFD9C6, #FF9A6C); }
-.product-card__art--2 { background: linear-gradient(155deg, #CFE8D6, #6FAF82); }
-.product-card__art--3 { background: linear-gradient(155deg, #E4E1F7, #9C97DA); }
-.product-card__art--4 { background: linear-gradient(155deg, #FCE9B8, #F0B840); }
+/* No photo yet: one calm neutral tile (the old bright gradients read as empty cards). */
+.product-card__art--1,
+.product-card__art--2,
+.product-card__art--3,
+.product-card__art--4 { background: var(--color-photo-bg); color: #A39B8F; }
 
 .product-card__art-icon {
   position: absolute;

@@ -30,10 +30,13 @@
   --color-ink-faint:      #A6A197; /* placeholders, disabled text */
 
   /* ---------- Color: Brand ---------- */
-  --color-accent:         #FF5A2E; /* primary CTA / brand accent (vermilion) */
-  --color-accent-hover:   #E44A20;
+  --color-accent:         #D63F12; /* primary CTA / brand accent (vermilion; dark enough for white text, 4.6:1) */
+  --color-accent-hover:   #B93510;
   --color-accent-soft:    #FFE7DB; /* tints — badges, hover backgrounds */
   --color-accent-ink:     #FFFFFF; /* text/icons placed on the accent color */
+  --color-accent-text:    #B23A12; /* accent-colored small text on light backgrounds */
+  --color-hero:           #FFE2D2; /* homepage hero panel (peach) */
+  --color-photo-bg:       #F1EBE3; /* behind product photos (white photo backgrounds blend into it) */
 
   --color-secondary:      #14532D; /* deep green — contrast sections/banners */
   --color-secondary-soft: #E3EEE4;
@@ -93,7 +96,7 @@
   --shadow-sm:     0 1px 2px rgba(21, 20, 15, 0.06);
   --shadow-md:     0 8px 24px rgba(21, 20, 15, 0.08);
   --shadow-lg:     0 20px 48px rgba(21, 20, 15, 0.14);
-  --shadow-accent: 0 12px 28px rgba(255, 90, 46, 0.28);
+  --shadow-accent: 0 12px 28px rgba(214, 63, 18, 0.26);
 
   /* ---------- Motion ---------- */
   --ease-out:      cubic-bezier(0.16, 1, 0.3, 1);

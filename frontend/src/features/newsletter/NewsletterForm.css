@@ -1,0 +1,18 @@
+.newsletter-form { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.newsletter-form input {
+  flex: 1 1 220px;
+  min-width: 0;
+  height: 50px;
+  padding: 0 var(--space-5);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  font-size: var(--text-base);
+}
+.newsletter-form .btn { height: 50px; }
+.newsletter-form--dark input { background: #23211C; border-color: #3A372F; color: #FAF8F4; }
+.newsletter-form--dark input::placeholder { color: #9C958A; }
+.newsletter-form__error { flex-basis: 100%; color: var(--color-danger); font-size: var(--text-sm); }
+.newsletter-form--dark .newsletter-form__error { color: #FF9C8A; }
+.newsletter-form__done { font-weight: var(--weight-semibold); color: var(--color-success); }
+.newsletter-form__done.newsletter-form--dark { color: #A7E3BC; }

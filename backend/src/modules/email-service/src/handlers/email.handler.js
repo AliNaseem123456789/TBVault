@@ -7,6 +7,7 @@ import {
     sendReturnUpdateEmail,
     sendLowStockEmail,
     sendBackInStockEmail,
+    sendContactMessageEmail,
 } from "../services/email.service.js";
 
 export async function handleEmailEvent(routingKey, data) {
@@ -36,6 +37,10 @@ export async function handleEmailEvent(routingKey, data) {
         case "inventory.back_in_stock":
             // The API publishes one message per customer, so a failed send retries just that one.
             await sendBackInStockEmail(data.email, data);
+            break;
+        case "support.contact.received":
+            // To the store's own inbox; the customer's address is in the message.
+            await sendContactMessageEmail(data.recipients.join(","), data);
             break;
         default:
             // Acked and ignored: an unhandled event isn't worth retrying.

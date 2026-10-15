@@ -11,6 +11,7 @@ const PAGE_SIZE = 12;
 
 const SORT_OPTIONS = [
   { value: 'created_at:desc', label: 'Newest first' },
+  { value: 'best_selling:desc', label: 'Best selling' },
   { value: 'price:asc', label: 'Price: low to high' },
   { value: 'price:desc', label: 'Price: high to low' },
   { value: 'name:asc', label: 'Name: A to Z' },

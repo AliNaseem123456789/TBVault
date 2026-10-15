@@ -22,6 +22,8 @@ import paymentRoutes, { stripeWebhookRouter } from "./modules/payments/payments.
 import returnRoutes from "./modules/returns/returns.routes.js"
 import wishlistRoutes from "./modules/wishlist/wishlist.routes.js"
 import stockAlertRoutes from "./modules/stock-alerts/stock-alerts.routes.js"
+import newsletterRoutes from "./modules/newsletter/newsletter.routes.js"
+import contactRoutes from "./modules/contact/contact.routes.js"
 import analyticsRoutes from "./modules/analytics/analytics.routes.js"
 import customerRoutes from "./modules/customers/customers.routes.js"
 import exportRoutes from "./modules/exports/exports.routes.js"
@@ -76,6 +78,8 @@ app.use("/api", sellerRoutes)
 app.use("/api", sellerOrderRoutes)
 app.use("/api", walletRoutes)
 app.use("/api", chatbotRoutes)
+app.use("/api", newsletterRoutes)
+app.use("/api", contactRoutes)
 
 app.get("/metrics", async (req, res) => {
   res.set("Content-Type", register.contentType);

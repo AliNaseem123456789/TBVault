@@ -30,6 +30,17 @@ import SellerDashboard from "./pages/Seller/SellerDashboard";
 import Wallet from "./pages/Wallet/Wallet";
 import StorePage from "./pages/Store/StorePage";
 import ChatPage from "./pages/Chat/ChatPage";
+import Collection from "./pages/Collection/Collection";
+import About from "./pages/Info/About";
+import Careers from "./pages/Info/Careers";
+import Press from "./pages/Info/Press";
+import Sustainability from "./pages/Info/Sustainability";
+import HelpCenter from "./pages/Info/HelpCenter";
+import ShippingReturns from "./pages/Info/ShippingReturns";
+import Contact from "./pages/Info/Contact";
+import Privacy from "./pages/Info/Privacy";
+import Terms from "./pages/Info/Terms";
+import GiftCards from "./pages/Info/GiftCards";
 import { ChatProvider } from "./features/chatbot/ChatProvider";
 
 const App = () => {
@@ -56,6 +67,19 @@ const App = () => {
             <Route path="/sell" element={<Sell />} />
             <Route path="/stores/:slug" element={<StorePage />} />
             <Route path="/chat" element={<ChatPage />} />
+            {/* Footer pages */}
+            <Route path="/new-arrivals" element={<Collection key="new-arrivals" kind="new-arrivals" />} />
+            <Route path="/best-sellers" element={<Collection key="best-sellers" kind="best-sellers" />} />
+            <Route path="/gift-cards" element={<GiftCards />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/careers" element={<Careers />} />
+            <Route path="/press" element={<Press />} />
+            <Route path="/sustainability" element={<Sustainability />} />
+            <Route path="/help" element={<HelpCenter />} />
+            <Route path="/shipping-returns" element={<ShippingReturns />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/privacy" element={<Privacy />} />
+            <Route path="/terms" element={<Terms />} />
 
             {/* Logged-in pages that are still part of the storefront (keep
                 the Navbar/Footer/cart) nest ProtectedRoute here instead of

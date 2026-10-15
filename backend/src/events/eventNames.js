@@ -3,6 +3,7 @@ export const EXCHANGES = {
     ORDER: "order.events",
     INVENTORY: "inventory.events",
     CATALOG: "catalog.events",
+    SUPPORT: "support.events",
 }
 
 export const AUTH_EVENTS={
@@ -24,6 +25,11 @@ export const ORDER_EVENTS = {
 // Products changed in a way search cares about (read by the chatbot's sync worker).
 export const CATALOG_EVENTS = {
     CHANGED: "catalog.changed",
+}
+
+// Messages from the Contact us page (the email worker forwards them to the store's inbox).
+export const SUPPORT_EVENTS = {
+    CONTACT_RECEIVED: "support.contact.received",
 }
 
 export const INVENTORY_EVENTS = {

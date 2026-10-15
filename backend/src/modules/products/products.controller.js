@@ -47,9 +47,40 @@ export const getProductsAdmin = (req, res) => getProductsByCategory(req, res, { 
 // GET /seller/products — a seller's own products, hidden ones included.
 export const getProductsSeller = (req, res) => getProductsByCategory(req, res, { includeHidden: true, sellerId: req.seller.id })
 
+// Units sold per product, counting every order that wasn't cancelled.
+const unitsSoldByProduct = async () => {
+  const rows = await prisma.orderItem.groupBy({
+    by: ["product_id"],
+    where: { order: { status: { not: "cancelled" } } },
+    _sum: { quantity: true },
+  });
+  return new Map(rows.map((r) => [r.product_id, r._sum.quantity ?? 0]));
+};
+
+/**
+ * One page of products ranked by units sold (best sellers first; products nobody
+ * has bought yet follow, newest first). The ranking needs every matching id, so
+ * this suits a store-sized catalog; a big one would keep a sales counter instead.
+ */
+const bestSellingPage = async ({ where, include, offset, limit }) => {
+  const [sold, matching] = await Promise.all([
+    unitsSoldByProduct(),
+    prisma.product.findMany({ where, select: { id: true, created_at: true } }),
+  ]);
+  const ranked = matching.sort(
+    (a, b) => (sold.get(b.id) ?? 0) - (sold.get(a.id) ?? 0) || b.created_at - a.created_at
+  );
+  const pageIds = ranked.slice(offset, offset + limit).map((p) => p.id);
+  const rows = await prisma.product.findMany({ where: { id: { in: pageIds } }, include });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const products = pageIds.filter((id) => byId.has(id)).map((id) => ({ ...byId.get(id), units_sold: sold.get(id) ?? 0 }));
+  return { products, totalItems: matching.length };
+};
+
 // GET /products?
 // search=phone&categoryId=2&minPrice=100&maxPrice=1000&inStock=true&sortBy=price
 // &order=asc&page=2&limit=10&brandId=4&sellerId=7
+// sortBy=best_selling ranks by units sold (order is ignored: always most sold first).
 export const getProductsByCategory = async (req, res, { includeHidden = false, sellerId = null } = {}) => {
   const { search, sortBy, order, inStock } = req.query;
 
@@ -129,7 +160,7 @@ export const getProductsByCategory = async (req, res, { includeHidden = false, s
     }
   }
   // Sorting validation
-  const allowedFields = ["name","price","stock","created_at"];
+  const allowedFields = ["name","price","stock","created_at","best_selling"];
   const allowedOrders = ["asc","desc"];
 
   if (sortBy !== undefined) {
@@ -204,45 +235,27 @@ export const getProductsByCategory = async (req, res, { includeHidden = false, s
   // Sorting
   const finalSortBy = sortBy || "created_at";
   const finalOrder = order || "desc";
+  // What every product row carries for the storefront cards.
+  const include = {
+    category: { select: { id: true, name: true } },
+    brand: { select: { id: true, name: true } },
+    seller: { select: PUBLIC_SELLER_SELECT },
+    images: { orderBy: [{ is_primary: "desc" }, { created_at: "asc" }], take: 2 },
+    // Enough to show "from $x" and whether any option is in stock.
+    variants: {
+      where: includeHidden ? {} : { is_active: true },
+      select: { id: true, name: true, price: true, stock: true, is_active: true },
+      orderBy: [{ sort_order: "asc" }, { id: "asc" }],
+    },
+  };
   // Database query
   try {
-    const [products, totalItems] = await Promise.all([
-      prisma.product.findMany({
-        where,
-        include: {
-          category: {
-            select: {
-              id: true,
-              name: true
-            }
-          },
-          brand: { select: { id: true, name: true } },
-          seller: { select: PUBLIC_SELLER_SELECT },
-        images: {
-            orderBy: [
-            { is_primary: "desc" },     
-            { created_at: "asc" },       
-                 ],
-                take: 2,},
-          // Enough to show "from $x" and whether any option is in stock.
-          variants: {
-            where: includeHidden ? {} : { is_active: true },
-            select: { id: true, name: true, price: true, stock: true, is_active: true },
-            orderBy: [{ sort_order: "asc" }, { id: "asc" }],
-          }
-        },
-        orderBy: {
-          [finalSortBy]: finalOrder
-        },
-
-        skip: offset,
-        take: limit
-      }),
-
-      prisma.product.count({
-        where
-      })
-    ]);
+    const { products, totalItems } = finalSortBy === "best_selling"
+      ? await bestSellingPage({ where, include, offset, limit })
+      : await Promise.all([
+          prisma.product.findMany({ where, include, orderBy: { [finalSortBy]: finalOrder }, skip: offset, take: limit }),
+          prisma.product.count({ where }),
+        ]).then(([products, totalItems]) => ({ products, totalItems }));
 
     const totalPages = Math.ceil(totalItems / limit);
 

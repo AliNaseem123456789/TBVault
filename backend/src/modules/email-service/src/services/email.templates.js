@@ -163,4 +163,17 @@ export const templates = {
     ),
     text: `${productName} is back in stock: ${productUrl}`,
   }),
+
+  contactMessage: ({ messageId, name, email, topic, orderRef, message }) => ({
+    subject: `Contact form: ${topic}${orderRef ? ` (order ${orderRef})` : ""}`,
+    html: layout(
+      `
+      <h2>New message from the Contact us page</h2>
+      <p><strong>${esc(name)}</strong> &lt;${esc(email)}&gt;<br>Topic: ${esc(topic)}${orderRef ? `<br>Order: ${esc(orderRef)}` : ""}</p>
+      <p style="white-space:pre-wrap;background:#f6f6f6;padding:12px;border-radius:6px">${esc(message)}</p>
+      <p>Reply to the customer at <a href="mailto:${esc(email)}">${esc(email)}</a>. Message #${esc(messageId)}.</p>`,
+      "You're receiving this as a TBVault store admin."
+    ),
+    text: `New contact message #${messageId}\nFrom: ${name} <${email}>\nTopic: ${topic}${orderRef ? `\nOrder: ${orderRef}` : ""}\n\n${message}`,
+  }),
 };

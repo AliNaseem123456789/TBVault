@@ -254,3 +254,13 @@ input:focus-visible {
 .qty-stepper--sm button { width: 30px; height: 32px; font-size: var(--text-md); }
 .qty-stepper--sm span { width: 24px; font-size: var(--text-sm); }
 
+
+/* ---------- Announcement bar (top of every storefront page) ---------- */
+.announcement-bar {
+  background: var(--color-ink);
+  color: var(--color-bg);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  text-align: center;
+  padding: 10px var(--container-pad);
+}
